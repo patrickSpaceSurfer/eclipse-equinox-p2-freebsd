@@ -15,8 +15,9 @@ package org.eclipse.equinox.internal.p2.transport.ecf;
 
 import java.io.*;
 import java.net.*;
-import java.util.HashMap;
 import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.TimeUnit;
 import org.eclipse.core.runtime.*;
 import org.eclipse.ecf.core.identity.IDCreateException;
 import org.eclipse.ecf.core.security.ConnectContextFactory;
@@ -42,7 +43,29 @@ import org.eclipse.osgi.util.NLS;
 public class RepositoryTransport extends Transport {
 
 	public static final String TIMEOUT_RETRY = "org.eclipse.equinox.p2.transport.ecf.retry"; //$NON-NLS-1$
-	private static Map<URI, Integer> socketExceptionRetry = null;
+
+	private static class Retry {
+		long LIFETIME = TimeUnit.MINUTES.toMillis(10);
+		long expiration;
+		int count;
+
+		public Retry() {
+			expiration = System.currentTimeMillis() + LIFETIME;
+		}
+
+		public synchronized int increment() {
+			long now = System.currentTimeMillis();
+			if (now > expiration) {
+				expiration = now + LIFETIME;
+				count = 1;
+				return 1;
+			}
+			return ++count;
+		}
+	}
+
+	private static final Map<URI, Retry> SOCKET_EXCEPTION_RETRY = new ConcurrentHashMap<>();
+
 	private IProvisioningAgent agent = null;
 
 	/**
@@ -74,10 +97,16 @@ public class RepositoryTransport extends Transport {
 		boolean promptUser = false;
 		boolean useJREHttp = false;
 		AuthenticationInfo loginDetails = null;
+		URI secureToDownload;
+		try {
+			secureToDownload = getSecureLocation(toDownload);
+		} catch (CoreException e) {
+			return e.getStatus();
+		}
 		for (int i = RepositoryPreferences.getLoginRetryCount(); i > 0; i--) {
 			FileReader reader = null;
 			try {
-				loginDetails = Credentials.forLocation(toDownload, promptUser, loginDetails);
+				loginDetails = Credentials.forLocation(secureToDownload, promptUser, loginDetails);
 				IConnectContext context = (loginDetails == null) ? null
 						: ConnectContextFactory.createUsernamePasswordConnectContext(loginDetails.getUserName(),
 								loginDetails.getPassword());
@@ -104,7 +133,7 @@ public class RepositoryTransport extends Transport {
 							eventBus.addListener(listener);
 						}
 					}
-					reader.readInto(toDownload, target, -1, monitor);
+					reader.readInto(secureToDownload, target, -1, monitor);
 				} finally {
 					if (eventBus != null) {
 						eventBus.removeListener(listener);
@@ -114,7 +143,7 @@ public class RepositoryTransport extends Transport {
 				// check that job ended ok - throw exceptions otherwise
 				IStatus result = reader.getResult();
 				if (result == null) {
-					String msg = NLS.bind(Messages.RepositoryTransport_failedReadRepo, toDownload);
+					String msg = NLS.bind(Messages.RepositoryTransport_failedReadRepo, secureToDownload);
 					DownloadStatus ds = new DownloadStatus(IStatus.ERROR, Activator.ID,
 							ProvisionException.REPOSITORY_FAILED_READ, msg, null);
 					return statusOn(target, ds, reader);
@@ -135,16 +164,16 @@ public class RepositoryTransport extends Transport {
 				throw e;
 			} catch (CoreException e) {
 				if (e.getStatus().getException() == null)
-					return statusOn(target, forException(e, toDownload), reader);
-				return statusOn(target, forStatus(e.getStatus(), toDownload), reader);
+					return statusOn(target, forException(e, secureToDownload), reader);
+				return statusOn(target, forStatus(e.getStatus(), secureToDownload), reader);
 			} catch (FileNotFoundException e) {
-				return statusOn(target, forException(e, toDownload), reader);
+				return statusOn(target, forException(e, secureToDownload), reader);
 			} catch (AuthenticationFailedException e) {
 				promptUser = true;
 			} catch (Credentials.LoginCanceledException e) {
 				DownloadStatus status = new DownloadStatus(IStatus.ERROR, Activator.ID,
 						ProvisionException.REPOSITORY_FAILED_AUTHENTICATION, //
-						NLS.bind(Messages.UnableToRead_0_UserCanceled, toDownload), null);
+						NLS.bind(Messages.UnableToRead_0_UserCanceled, secureToDownload), null);
 				return statusOn(target, status, null);
 			} catch (JREHttpClientRequiredException e) {
 				if (!useJREHttp) {
@@ -157,7 +186,7 @@ public class RepositoryTransport extends Transport {
 		// reached maximum number of retries without success
 		DownloadStatus status = new DownloadStatus(IStatus.ERROR, Activator.ID,
 				ProvisionException.REPOSITORY_FAILED_AUTHENTICATION, //
-				NLS.bind(Messages.UnableToRead_0_TooManyAttempts, toDownload), null);
+				NLS.bind(Messages.UnableToRead_0_TooManyAttempts, secureToDownload), null);
 		return statusOn(target, status, null);
 	}
 
@@ -168,17 +197,18 @@ public class RepositoryTransport extends Transport {
 		boolean promptUser = false;
 		boolean useJREHttp = false;
 		AuthenticationInfo loginDetails = null;
+		URI secureToDownload = getSecureLocation(toDownload);
 		for (int i = RepositoryPreferences.getLoginRetryCount(); i > 0; i--) {
 			FileReader reader = null;
 			try {
-				loginDetails = Credentials.forLocation(toDownload, promptUser, loginDetails);
+				loginDetails = Credentials.forLocation(secureToDownload, promptUser, loginDetails);
 				IConnectContext context = (loginDetails == null) ? null
 						: ConnectContextFactory.createUsernamePasswordConnectContext(loginDetails.getUserName(),
 								loginDetails.getPassword());
 
 				// perform the streamed download
 				reader = new FileReader(agent, context);
-				return reader.read(toDownload, monitor);
+				return reader.read(secureToDownload, monitor);
 			} catch (UserCancelledException e) {
 				throw new OperationCanceledException();
 			} catch (AuthenticationFailedException e) {
@@ -187,8 +217,8 @@ public class RepositoryTransport extends Transport {
 				// must translate this core exception as it is most likely not informative to a
 				// user
 				if (e.getStatus().getException() == null)
-					throw new CoreException(forException(e, toDownload));
-				throw new CoreException(forStatus(e.getStatus(), toDownload));
+					throw new CoreException(forException(e, secureToDownload));
+				throw new CoreException(forStatus(e.getStatus(), secureToDownload));
 			} catch (LoginCanceledException e) {
 				// i.e. same behavior when user cancels as when failing n attempts.
 				throw new AuthenticationFailedException();
@@ -233,23 +263,24 @@ public class RepositoryTransport extends Transport {
 		boolean promptUser = false;
 		boolean useJREHttp = false;
 		AuthenticationInfo loginDetails = null;
+		URI secureToDownload = getSecureLocation(toDownload);
 		for (int i = RepositoryPreferences.getLoginRetryCount(); i > 0; i--) {
 			try {
-				loginDetails = Credentials.forLocation(toDownload, promptUser, loginDetails);
+				loginDetails = Credentials.forLocation(secureToDownload, promptUser, loginDetails);
 				IConnectContext context = (loginDetails == null) ? null
 						: ConnectContextFactory.createUsernamePasswordConnectContext(loginDetails.getUserName(),
 								loginDetails.getPassword());
 				// get the remote info
 				FileInfoReader reader = new FileInfoReader(context);
-				return reader.getLastModified(toDownload, monitor);
+				return reader.getLastModified(secureToDownload, monitor);
 			} catch (UserCancelledException e) {
 				throw new OperationCanceledException();
 			} catch (CoreException e) {
 				// must translate this core exception as it is most likely not informative to a
 				// user
 				if (e.getStatus().getException() == null)
-					throw new CoreException(forException(e, toDownload));
-				throw new CoreException(forStatus(e.getStatus(), toDownload));
+					throw new CoreException(forException(e, secureToDownload));
+				throw new CoreException(forStatus(e.getStatus(), secureToDownload));
 			} catch (AuthenticationFailedException e) {
 				promptUser = true;
 			} catch (LoginCanceledException e) {
@@ -291,24 +322,11 @@ public class RepositoryTransport extends Transport {
 		if (isForgiveableException(t)) {
 			int retry = Integer.getInteger(TIMEOUT_RETRY, 0);
 			if (retry > 0) {
-				Integer retryCount = null;
-				if (socketExceptionRetry == null) {
-					socketExceptionRetry = new HashMap<>();
-					retryCount = Integer.valueOf(1);
-				} else {
-					Integer alreadyRetryCount = socketExceptionRetry.get(toDownload);
-					if (alreadyRetryCount == null)
-						retryCount = Integer.valueOf(1);
-					else if (alreadyRetryCount.intValue() < retry) {
-						retryCount = Integer.valueOf(alreadyRetryCount.intValue() + 1);
-					}
-				}
-				if (retryCount != null && retryCount.intValue() <= retry) {
-					socketExceptionRetry.put(toDownload, retryCount);
-					return new DownloadStatus(IStatus.ERROR, Activator.ID, IArtifactRepository.CODE_RETRY,
-							NLS.bind(Messages.connection_to_0_failed_on_1_retry_attempt_2,
-									new String[] { toDownload.toString(), t.getMessage(), retryCount.toString() }),
-							t);
+				int retryCount = SOCKET_EXCEPTION_RETRY.computeIfAbsent(toDownload, uri -> new Retry()).increment();
+				if (retryCount <= retry) {
+					return new DownloadStatus(IStatus.ERROR, Activator.ID, IArtifactRepository.CODE_RETRY, NLS.bind(
+							Messages.connection_to_0_failed_on_1_retry_attempt_2,
+							new String[] { toDownload.toString(), t.getMessage(), Integer.toString(retryCount) }), t);
 				}
 			}
 		}

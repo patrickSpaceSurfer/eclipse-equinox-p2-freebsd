@@ -6,12 +6,6 @@
    <extension-point id="artifactComparators" name="Artifact Comparators" schema="schema/artifactComparators.exsd"/>
    <extension-point id="artifactChecksums" name="Artifact Checksum support" schema="schema/artifactChecksums.exsd"/>
 
-	<extension
-			point="org.eclipse.equinox.p2.artifact.repository.processingSteps"
-			id="org.eclipse.equinox.p2.processing.Pack200Unpacker">
-		<step class="org.eclipse.equinox.internal.p2.artifact.processors.pack200.Pack200ProcessorStep"/>
-	</extension>
-
    <extension id="XZedRepository"  point="org.eclipse.equinox.p2.artifact.repository.artifactRepositories">
 		<filter suffix="artifacts.xml.xz"/>
 		<factory class="org.eclipse.equinox.internal.p2.artifact.repository.simple.XZedSimpleArtifactRepositoryFactory"/>
@@ -43,17 +37,38 @@
 		<artifactChecksum
         algorithm="MD5"
         id="md5"
+        priority="-2000"
+        publish="false"
         warnInsecure="true">
 		</artifactChecksum>
 	</extension>
 	<extension
 			point="org.eclipse.equinox.p2.artifact.repository.artifactChecksums">
 		<artifactChecksum
-			algorithm="SHA-256"
-			id="sha-256">
+        algorithm="SHA-1"
+        id="sha-1"
+        priority="-1000"
+        publish="false"
+        warnInsecure="true">
 		</artifactChecksum>
 	</extension>
-
+	<extension
+			point="org.eclipse.equinox.p2.artifact.repository.artifactChecksums">
+		<artifactChecksum
+        algorithm="SHA-256"
+        id="sha-256"
+        priority="1000">
+		</artifactChecksum>
+	</extension>
+	<extension
+			point="org.eclipse.equinox.p2.artifact.repository.artifactChecksums">
+		<artifactChecksum
+        algorithm="SHA-512"
+        id="sha-512"
+        priority="2000">
+		</artifactChecksum>
+	</extension>
+	
 	<extension
 			id="org.eclipse.equinox.p2.processing.PGPSignatureCheck"
 			point="org.eclipse.equinox.p2.artifact.repository.processingSteps">

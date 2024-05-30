@@ -169,7 +169,7 @@ public class ProductAction extends AbstractPublisherAction {
 		if (productFileLocation == null)
 			return;
 
-		AdviceFileAdvice advice = new AdviceFileAdvice(product.getId(), Version.parseVersion(product.getVersion()), new Path(productFileLocation.getParent()), new Path("p2.inf")); //$NON-NLS-1$
+		AdviceFileAdvice advice = new AdviceFileAdvice(product.getId(), Version.parseVersion(product.getVersion()), IPath.fromOSString(productFileLocation.getParent()), IPath.fromOSString("p2.inf")); //$NON-NLS-1$
 		if (advice.containsAdvice())
 			info.addAdvice(advice);
 	}
@@ -179,17 +179,17 @@ public class ProductAction extends AbstractPublisherAction {
 		switch (product.getProductContentType()) { // add new case for each new content type included in product
 			case MIXED : // include all content types
 				list = versionElements(listElements(product.getFeatures(), ".feature.group"), IInstallableUnit.NAMESPACE_IU_ID); //$NON-NLS-1$
-				list.addAll(versionElements(listElements(product.getBundles(true), null), IInstallableUnit.NAMESPACE_IU_ID));
+				list.addAll(versionElements(listElements(product.getBundles(), null), IInstallableUnit.NAMESPACE_IU_ID));
 				break;
 			case FEATURES : // include features only
 				list = versionElements(listElements(product.getFeatures(), ".feature.group"), IInstallableUnit.NAMESPACE_IU_ID); //$NON-NLS-1$
 
-				if (product.hasBundles(true)) {
+				if (product.hasBundles()) {
 					finalStatus.add(new Status(IStatus.INFO, Activator.ID, Messages.bundlesInProductFileIgnored));
 				}
 				break;
 			case BUNDLES : // include bundles only
-				list = versionElements(listElements(product.getBundles(true), null), IInstallableUnit.NAMESPACE_IU_ID);
+				list = versionElements(listElements(product.getBundles(), null), IInstallableUnit.NAMESPACE_IU_ID);
 
 				if (product.hasFeatures()) {
 					finalStatus.add(new Status(IStatus.INFO, Activator.ID, Messages.featuresInProductFileIgnored));

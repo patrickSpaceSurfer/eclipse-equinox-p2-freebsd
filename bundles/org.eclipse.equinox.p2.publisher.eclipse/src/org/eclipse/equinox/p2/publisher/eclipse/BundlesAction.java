@@ -428,17 +428,30 @@ public class BundlesAction extends AbstractPublisherAction {
 		capAttrs.compute(capNs,
 				(k, v) -> (v instanceof String) ? v : String.format("%s_%s-%s", iu.getId(), iu.getVersion(), capNo)); //$NON-NLS-1$
 
+		for (Version version : getVersions(capAttrs)) {
+			capAttrs.put(IProvidedCapability.PROPERTY_VERSION, version); // created capability contains a copy
+			caps.add(MetadataFactory.createProvidedCapability(capNs, capAttrs));
+		}
+	}
+
+	@SuppressWarnings("unchecked")
+	private Collection<Version> getVersions(Map<String, Object> capAttrs) {
 		// Resolve the mandatory p2 version
 		// By convention versioned OSGi capabilities have a "version" attribute
 		// containing the OSGi Version object
 		// If this is not the case use an empty version (e.g. "osgi.ee" has a list of
 		// versions).
-		// TODO If present but not a Version log a warning somehow that it is ignored?
-		// Or fail the publication?
-		capAttrs.compute(IProvidedCapability.PROPERTY_VERSION,
-				(k, v) -> (v instanceof Version) ? v : Version.emptyVersion);
-
-		caps.add(MetadataFactory.createProvidedCapability(capNs, capAttrs));
+		Object versionValue = capAttrs.get(IProvidedCapability.PROPERTY_VERSION);
+		if (versionValue instanceof Version) {
+			return List.of((Version) versionValue);
+		} else if (versionValue instanceof Collection
+				&& ((Collection<?>) versionValue).stream().allMatch(Version.class::isInstance)) {
+			return (Collection<Version>) versionValue;
+		} else {
+			// TODO If present but not a Version log a warning somehow that it is ignored?
+			// Or fail the publication?
+			return List.of(Version.emptyVersion);
+		}
 	}
 
 	private Object convertAttribute(Object attr) {
@@ -646,7 +659,7 @@ public class BundlesAction extends AbstractPublisherAction {
 		String bundleLocalization = bundleManifestValues[BUNDLE_LOCALIZATION_INDEX]; // Bundle localization is the last
 																						// one in the list
 
-		if ("jar".equalsIgnoreCase(new Path(bundleLocation.getName()).getFileExtension()) && //$NON-NLS-1$
+		if ("jar".equalsIgnoreCase(IPath.fromOSString(bundleLocation.getName()).getFileExtension()) && //$NON-NLS-1$
 				bundleLocation.isFile()) {
 			localizations = LocalizationHelper.getJarPropertyLocalizations(bundleLocation, bundleLocalization,
 					defaultLocale, bundleManifestValues);
@@ -705,7 +718,7 @@ public class BundlesAction extends AbstractPublisherAction {
 		if (hostBundleLocalization == null)
 			return null;
 
-		if ("jar".equalsIgnoreCase(new Path(bundleLocation.getName()).getFileExtension()) && //$NON-NLS-1$
+		if ("jar".equalsIgnoreCase(IPath.fromOSString(bundleLocation.getName()).getFileExtension()) && //$NON-NLS-1$
 				bundleLocation.isFile()) {
 			localizations = LocalizationHelper.getJarPropertyLocalizations(bundleLocation, hostBundleLocalization,
 					defaultLocale, hostBundleManifestValues);
@@ -816,7 +829,7 @@ public class BundlesAction extends AbstractPublisherAction {
 			throws IOException, BundleException {
 		InputStream manifestStream = null;
 		ZipFile jarFile = null;
-		if ("jar".equalsIgnoreCase(new Path(bundleLocation.getName()).getFileExtension()) && bundleLocation.isFile()) { //$NON-NLS-1$
+		if ("jar".equalsIgnoreCase(IPath.fromOSString(bundleLocation.getName()).getFileExtension()) && bundleLocation.isFile()) { //$NON-NLS-1$
 			jarFile = new ZipFile(bundleLocation, ZipFile.OPEN_READ);
 			ZipEntry manifestEntry = jarFile.getEntry(JarFile.MANIFEST_NAME);
 			if (manifestEntry != null) {
@@ -853,7 +866,7 @@ public class BundlesAction extends AbstractPublisherAction {
 	private static Headers<String, String> parseBundleManifestIntoModifyableDictionaryWithCaseInsensitiveKeys(
 			InputStream manifestStream) throws IOException, BundleException {
 		return (Headers<String, String>) ManifestElement.parseBundleManifest(manifestStream,
-				new Headers<String, String>(10));
+				new Headers<>(10));
 	}
 
 	private static ManifestElement[] parseManifestHeader(String header, Map<String, String> manifest,
@@ -1061,7 +1074,7 @@ public class BundlesAction extends AbstractPublisherAction {
 			return;
 
 		AdviceFileAdvice advice = new AdviceFileAdvice(bundleDescription.getSymbolicName(),
-				PublisherHelper.fromOSGiVersion(bundleDescription.getVersion()), new Path(location),
+				PublisherHelper.fromOSGiVersion(bundleDescription.getVersion()), IPath.fromOSString(location),
 				AdviceFileAdvice.BUNDLE_ADVICE_FILE);
 		if (advice.containsAdvice())
 			publisherInfo.addAdvice(advice);

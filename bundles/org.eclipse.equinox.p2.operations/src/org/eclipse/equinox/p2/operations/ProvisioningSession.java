@@ -21,7 +21,6 @@ import java.util.*;
 import org.eclipse.core.runtime.*;
 import org.eclipse.core.runtime.jobs.*;
 import org.eclipse.equinox.internal.p2.core.helpers.ServiceHelper;
-import org.eclipse.equinox.internal.p2.operations.Constants;
 import org.eclipse.equinox.internal.p2.operations.Messages;
 import org.eclipse.equinox.internal.provisional.configurator.Configurator;
 import org.eclipse.equinox.internal.provisional.p2.core.eventbus.IProvisioningEventBus;
@@ -47,7 +46,7 @@ import org.osgi.framework.FrameworkUtil;
 public class ProvisioningSession {
 	private IProvisioningAgent agent;
 
-	Set<Job> scheduledJobs = Collections.synchronizedSet(new HashSet<Job>());
+	Set<Job> scheduledJobs = Collections.synchronizedSet(new HashSet<>());
 
 	/**
 	 * Create a provisioning session using the services of the supplied agent.
@@ -128,11 +127,7 @@ public class ProvisioningSession {
 	 * @return a status describing the result of performing the plan
 	 */
 	public IStatus performProvisioningPlan(IProvisioningPlan plan, IPhaseSet phaseSet, ProvisioningContext context, IProgressMonitor monitor) {
-		IPhaseSet set;
-		if (phaseSet == null)
-			set = PhaseSetFactory.createDefaultPhaseSet();
-		else
-			set = phaseSet;
+		IPhaseSet set = phaseSet == null ? PhaseSetFactory.createDefaultPhaseSet() : phaseSet;
 
 		// 300 ticks for download, 100 to install handlers, 100 to compute the plan, 100 to install the rest
 		SubMonitor mon = SubMonitor.convert(monitor, 600);
@@ -149,9 +144,8 @@ public class ProvisioningSession {
 				// at the same time as the actual install artifacts.  This way, we will only install the install handler
 				// after already knowing we have successfully obtained the artifacts that will be installed afterward.
 				IProvisioningPlan downloadPlan = getEngine().createPlan(profile, context);
-				Iterator<IInstallableUnit> it = QueryUtil.compoundQueryable(plan.getAdditions(), plan.getInstallerPlan().getAdditions()).query(QueryUtil.createIUAnyQuery(), null).iterator();
-				while (it.hasNext()) {
-					downloadPlan.addInstallableUnit(it.next());
+				for (IInstallableUnit element : QueryUtil.compoundQueryable(plan.getAdditions(), plan.getInstallerPlan().getAdditions()).query(QueryUtil.createIUAnyQuery(), null)) {
+					downloadPlan.addInstallableUnit(element);
 				}
 				IPhaseSet download = PhaseSetFactory.createPhaseSetIncluding(new String[] {PhaseSetFactory.PHASE_COLLECT});
 				IStatus downloadStatus = getEngine().perform(downloadPlan, download, mon.newChild(300));
@@ -175,10 +169,12 @@ public class ProvisioningSession {
 				configChanger.applyConfiguration();
 			} catch (IOException e) {
 				mon.done();
-				return new Status(IStatus.ERROR, Constants.BUNDLE_ID, Messages.ProvisioningSession_InstallPlanConfigurationError, e);
+				return Status.error(Messages.ProvisioningSession_InstallPlanConfigurationError, e);
 			}
 		}
-		return getEngine().perform(plan, set, mon.newChild(500 - ticksUsed));
+		IStatus status = getEngine().perform(plan, set, mon.newChild(500 - ticksUsed));
+		mon.done();
+		return status;
 	}
 
 	private boolean doesPhaseSetIncludeDownload(IPhaseSet set) {

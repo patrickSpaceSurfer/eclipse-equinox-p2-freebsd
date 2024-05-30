@@ -1,5 +1,5 @@
 /*******************************************************************************
- *  Copyright (c) 2007, 2020 IBM Corporation and others.
+ *  Copyright (c) 2007, 2023 IBM Corporation and others.
  *
  *  This program and the accompanying materials
  *  are made available under the terms of the Eclipse Public License 2.0
@@ -44,14 +44,14 @@ import org.eclipse.equinox.p2.repository.metadata.spi.AbstractMetadataRepository
  */
 public class LocalMetadataRepository extends AbstractMetadataRepository implements IIndexProvider<IInstallableUnit> {
 
-	static final private String CONTENT_FILENAME = "content"; //$NON-NLS-1$
-	static final private String REPOSITORY_TYPE = LocalMetadataRepository.class.getName();
-	static final private Integer REPOSITORY_VERSION = 1;
-	static final private String JAR_EXTENSION = ".jar"; //$NON-NLS-1$
-	static final private String XML_EXTENSION = ".xml"; //$NON-NLS-1$
+	private static final String CONTENT_FILENAME = "content"; //$NON-NLS-1$
+	private static final String REPOSITORY_TYPE = LocalMetadataRepository.class.getName();
+	private static final Integer REPOSITORY_VERSION = 1;
+	private static final String JAR_EXTENSION = ".jar"; //$NON-NLS-1$
+	private static final String XML_EXTENSION = ".xml"; //$NON-NLS-1$
 
 	protected IUMap units = new IUMap();
-	protected HashSet<IRepositoryReference> repositories = new HashSet<>();
+	protected final Set<IRepositoryReference> repositories = new LinkedHashSet<>();
 	private IIndex<IInstallableUnit> idIndex;
 	private IIndex<IInstallableUnit> capabilityIndex;
 	private TranslationSupport translationSupport;
@@ -114,14 +114,24 @@ public class LocalMetadataRepository extends AbstractMetadataRepository implemen
 	@Override
 	public void addReferences(Collection<? extends IRepositoryReference> references) {
 		assertModifiable();
-		// only write out the repository if we made changes
-		if (repositories.addAll(references))
-			save();
+		if (repositories.addAll(references)) {
+			save(); // only write out the repository if we made changes
+		}
+	}
+
+	@Override
+	public boolean removeReferences(Collection<? extends IRepositoryReference> references) {
+		assertModifiable();
+		if (repositories.removeAll(references)) {
+			save(); // only write out the repository if we made changes
+			return true;
+		}
+		return false;
 	}
 
 	@Override
 	public Collection<IRepositoryReference> getReferences() {
-		return Collections.unmodifiableCollection(repositories);
+		return Collections.unmodifiableSet(repositories);
 	}
 
 	@Override
@@ -205,6 +215,11 @@ public class LocalMetadataRepository extends AbstractMetadataRepository implemen
 	@Override
 	public IQueryResult<IInstallableUnit> query(IQuery<IInstallableUnit> query, IProgressMonitor monitor) {
 		return IndexProvider.query(this, query, monitor);
+	}
+
+	@Override
+	public boolean contains(IInstallableUnit element) {
+		return units.contains(element);
 	}
 
 	@Override

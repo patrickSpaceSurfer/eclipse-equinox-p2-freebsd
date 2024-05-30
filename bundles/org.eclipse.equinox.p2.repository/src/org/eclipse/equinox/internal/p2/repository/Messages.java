@@ -25,6 +25,8 @@ public class Messages extends NLS {
 	public static String CacheManager_CannotLoadNonUrlLocation;
 	public static String CacheManager_FailedCommunicationWithRepo_0;
 	public static String CacheManager_Neither_0_nor_1_found;
+	public static String CacheManager_Repository_not_found;
+
 	public static String CacheManage_ErrorRenamingCache;
 
 	public static String artifact_not_found;
@@ -89,7 +91,8 @@ public class Messages extends NLS {
 	public static String UnableToRead_0_UserCanceled;
 
 	public static String RepositoryTransport_failedReadRepo;
-	public static String unsafeHttp;
+	public static String RepositoryTransport_unsafeProtocolBlocked;
+	public static String RepositoryTransport_unsafeProtocol;
 
 	static {
 		// initialize resource bundles

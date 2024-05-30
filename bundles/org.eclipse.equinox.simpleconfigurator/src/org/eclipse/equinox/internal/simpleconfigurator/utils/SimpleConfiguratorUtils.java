@@ -38,7 +38,7 @@ public class SimpleConfiguratorUtils {
 	private static final String COMMA = ",";
 	private static final String ENCODED_COMMA = "%2C";
 
-	private static final Set<File> reportedExtensions = Collections.synchronizedSet(new HashSet<File>(0));
+	private static final Set<File> reportedExtensions = Collections.synchronizedSet(new HashSet<>(0));
 
 	public static List<BundleInfo> readConfiguration(URL url, URI base) throws IOException {
 		List<BundleInfo> result = new ArrayList<>();
@@ -132,7 +132,9 @@ public class SimpleConfiguratorUtils {
 			for (File extension : extensions) {
 				if (extension.isFile() && extension.getName().endsWith(LINK_FILE_EXTENSION)) {
 					Properties link = new Properties();
-					link.load(new FileInputStream(extension));
+					try (FileInputStream inStream = new FileInputStream(extension)) {
+						link.load(inStream);
+					}
 					String newInfoName = link.getProperty(LINK_KEY);
 					URI newInfoURI = new URI(newInfoName);
 					File newInfoFile = null;

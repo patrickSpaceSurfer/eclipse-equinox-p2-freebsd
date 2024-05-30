@@ -16,17 +16,10 @@ package org.eclipse.internal.provisional.equinox.p2.jarprocessor;
 import java.io.*;
 import java.util.*;
 import java.util.jar.*;
-import org.eclipse.equinox.internal.p2.jarprocessor.*;
+import org.eclipse.equinox.internal.p2.jarprocessor.Utils;
+import org.eclipse.equinox.internal.p2.jarprocessor.ZipProcessor;
 
 public class JarProcessor {
-	/**
-	 * @noreference This field is not intended to be referenced by clients.
-	 * @deprecated See <a href=
-	 *             "https://bugs.eclipse.org/bugs/show_bug.cgi?id=572043">bug</a>
-	 *             for details.
-	 */
-	@Deprecated(forRemoval = true, since = "1.2.0")
-	public static final String PACKED_SUFFIX = "pack.gz"; //$NON-NLS-1$
 
 	private List<IProcessStep> steps = new ArrayList<>();
 	private String workingDirectory = ""; //$NON-NLS-1$
@@ -34,58 +27,6 @@ public class JarProcessor {
 	private boolean verbose = false;
 	private boolean processAll = false;
 	private LinkedList<Properties> containingInfs = new LinkedList<>();
-
-	/**
-	 * @noreference This method is not intended to be referenced by clients.
-	 * @deprecated See <a href=
-	 *             "https://bugs.eclipse.org/bugs/show_bug.cgi?id=572043">bug</a>
-	 *             and <a href=
-	 *             "https://github.com/eclipse-equinox/p2/issues/40">issue</a> for
-	 *             details.
-	 */
-	@Deprecated(forRemoval = true, since = "1.2.0")
-	public static JarProcessor getUnpackProcessor(Properties properties) {
-		throw new UnsupportedOperationException();
-	}
-
-	/**
-	 * @noreference This method is not intended to be referenced by clients.
-	 * @deprecated See <a href=
-	 *             "https://bugs.eclipse.org/bugs/show_bug.cgi?id=572043">bug</a>
-	 *             and <a
-	 *             href="https://github.com/eclipse-equinox/p2/issues/40>issue</a>
-	 *             for details.
-	 */
-	@Deprecated(forRemoval = true, since = "1.2.0")
-	public static JarProcessor getPackProcessor(Properties properties) {
-		throw new UnsupportedOperationException();
-	}
-
-	/**
-	 * @noreference This method is not intended to be referenced by clients.
-	 * @deprecated See <a href=
-	 *             "https://bugs.eclipse.org/bugs/show_bug.cgi?id=572043">bug</a>
-	 *             and <a
-	 *             href="https://github.com/eclipse-equinox/p2/issues/40>issue</a>
-	 *             for details.
-	 */
-	@Deprecated(forRemoval = true, since = "1.2.0")
-	public static boolean canPerformPack() {
-		return PackStep.canPack();
-	}
-
-	/**
-	 * @noreference This method is not intended to be referenced by clients.
-	 * @deprecated See <a href=
-	 *             "https://bugs.eclipse.org/bugs/show_bug.cgi?id=572043">bug</a>
-	 *             and <a
-	 *             href="https://github.com/eclipse-equinox/p2/issues/40>issue</a>
-	 *             for details.
-	 */
-	@Deprecated(forRemoval = true, since = "1.2.0")
-	public static boolean canPerformUnpack() {
-		return UnpackStep.canUnpack();
-	}
 
 	public String getWorkingDirectory() {
 		return workingDirectory;
@@ -366,12 +307,9 @@ public class JarProcessor {
 					File parent = tempJar.getParentFile();
 					if (!parent.exists())
 						parent.mkdirs();
-					JarOutputStream jarOut = null;
-					try {
-						jarOut = new JarOutputStream(new BufferedOutputStream(new FileOutputStream(tempJar)));
+					try (JarOutputStream jarOut = new JarOutputStream(
+							new BufferedOutputStream(new FileOutputStream(tempJar)))) {
 						recreateJar(jar, jarOut, replacements, tempDir, inf);
-					} finally {
-						Utils.close(jarOut);
 					}
 					if (tempJar != null) {
 						if (!workingFile.equals(input)) {
@@ -414,37 +352,25 @@ public class JarProcessor {
 	}
 
 	private void normalize(File input, File directory) {
-		if (input.getName().endsWith(JarProcessor.PACKED_SUFFIX)) {
-			// not a jar
-			return;
-		}
 		try {
 			File tempJar = new File(directory, "temp_" + input.getName()); //$NON-NLS-1$
-			JarFile jar = null;
-			JarOutputStream jarOut = null;
-			InputStream jarIn = null;
-			try {
-				jar = new JarFile(input, false);
-				jarOut = new JarOutputStream(new BufferedOutputStream(new FileOutputStream(tempJar)));
+			try (JarFile jar = new JarFile(input, false);
+					JarOutputStream jarOut = new JarOutputStream(
+							new BufferedOutputStream(new FileOutputStream(tempJar)))) {
 				Enumeration<JarEntry> entries = jar.entries();
 				for (JarEntry entry = entries.nextElement(); entry != null; entry = entries.hasMoreElements()
 						? (JarEntry) entries.nextElement()
 						: null) {
 					JarEntry newEntry = new JarEntry(entry.getName());
 					newEntry.setTime(entry.getTime());
-					jarIn = new BufferedInputStream(jar.getInputStream(entry));
-					jarOut.putNextEntry(newEntry);
-					Utils.transferStreams(jarIn, jarOut, false);
-					jarOut.closeEntry();
-					jarIn.close();
+					try (InputStream jarIn = new BufferedInputStream(jar.getInputStream(entry))) {
+						jarOut.putNextEntry(newEntry);
+						jarIn.transferTo(jarOut);
+					}
 				}
 			} catch (JarException e) {
 				// not a jar
 				return;
-			} finally {
-				Utils.close(jarOut);
-				Utils.close(jarIn);
-				Utils.close(jar);
 			}
 			tempJar.setLastModified(input.lastModified());
 			input.delete();

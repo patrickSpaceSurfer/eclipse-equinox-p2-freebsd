@@ -1,5 +1,5 @@
 /*******************************************************************************
- * Copyright (c) 2007, 2017 IBM Corporation and others.
+ * Copyright (c) 2007, 2023 IBM Corporation and others.
  *
  * This program and the accompanying materials
  * are made available under the terms of the Eclipse Public License 2.0
@@ -330,6 +330,8 @@ public class EquinoxFwConfigFileParser {
 	}
 
 	private File findSharedConfigIniFile(File base, String sharedConfigurationArea) {
+		if (sharedConfigurationArea == null)
+			return null;
 		if (base == null)
 			return null;
 		URL rootURL;
@@ -503,18 +505,9 @@ public class EquinoxFwConfigFileParser {
 
 	private void saveProperties(File outputFile, Properties configProps) throws IOException {
 		String header = "This configuration file was written by: " + this.getClass().getName(); //$NON-NLS-1$
-		FileOutputStream out = null;
-		try {
-			out = new FileOutputStream(outputFile);
+		try (FileOutputStream out = new FileOutputStream(outputFile)){
 			configProps.store(out, header);
 			Log.log(LogService.LOG_INFO, NLS.bind(Messages.log_propertiesSaved, outputFile));
-		} finally {
-			try {
-				out.flush();
-				out.close();
-			} catch (IOException e) {
-				e.printStackTrace();
-			}
 		}
 	}
 

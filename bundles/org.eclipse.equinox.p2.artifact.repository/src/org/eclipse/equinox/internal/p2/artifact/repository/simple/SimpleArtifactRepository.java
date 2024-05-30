@@ -268,11 +268,6 @@ public class SimpleArtifactRepository extends AbstractArtifactRepository impleme
 	private static final String ARTIFACT_FOLDER = "artifact.folder"; //$NON-NLS-1$
 	private static final String ARTIFACT_UUID = "artifact.uuid"; //$NON-NLS-1$
 	static final private String BLOBSTORE = ".blobstore/"; //$NON-NLS-1$
-	static final private String[][] PACKED_MAPPING_RULES = {{"(& (classifier=osgi.bundle) (format=packed))", "${repoUrl}/plugins/${id}_${version}.jar.pack.gz"}, //$NON-NLS-1$//$NON-NLS-2$
-			{"(& (classifier=osgi.bundle))", "${repoUrl}/plugins/${id}_${version}.jar"}, //$NON-NLS-1$//$NON-NLS-2$
-			{"(& (classifier=binary))", "${repoUrl}/binary/${id}_${version}"}, //$NON-NLS-1$ //$NON-NLS-2$
-			{"(& (classifier=org.eclipse.update.feature) (format=packed))", "${repoUrl}/features/${id}_${version}.jar.pack.gz"}, //$NON-NLS-1$//$NON-NLS-2$
-			{"(& (classifier=org.eclipse.update.feature))", "${repoUrl}/features/${id}_${version}.jar"}}; //$NON-NLS-1$//$NON-NLS-2$
 
 	static final private String[][] DEFAULT_MAPPING_RULES = {{"(& (classifier=osgi.bundle))", "${repoUrl}/plugins/${id}_${version}.jar"}, //$NON-NLS-1$//$NON-NLS-2$
 			{"(& (classifier=binary))", "${repoUrl}/binary/${id}_${version}"}, //$NON-NLS-1$ //$NON-NLS-2$
@@ -283,6 +278,7 @@ public class SimpleArtifactRepository extends AbstractArtifactRepository impleme
 	static final private Integer REPOSITORY_VERSION = 1;
 	private static final String XML_EXTENSION = ".xml"; //$NON-NLS-1$
 	protected Set<SimpleArtifactDescriptor> artifactDescriptors = new HashSet<>();
+	private Set<SimpleArtifactDescriptor> addedDescriptors = new HashSet<>();
 	/**
 	 * Map<IArtifactKey,List<IArtifactDescriptor>> containing the index of artifacts in the repository.
 	 */
@@ -291,8 +287,6 @@ public class SimpleArtifactRepository extends AbstractArtifactRepository impleme
 	transient private Mapper mapper = new Mapper();
 	private KeyIndex keyIndex;
 	private boolean snapshotNeeded = false;
-
-	static final private String PUBLISH_PACK_FILES_AS_SIBLINGS = "publishPackFilesAsSiblings"; //$NON-NLS-1$
 
 	private static final int DEFAULT_MAX_THREADS = 4;
 
@@ -329,15 +323,20 @@ public class SimpleArtifactRepository extends AbstractArtifactRepository impleme
 	/*
 	 * This is only called by the parser when loading a repository.
 	 */
-	SimpleArtifactRepository(IProvisioningAgent agent, String name, String type, String version, String description, String provider, Set<SimpleArtifactDescriptor> artifacts, String[][] mappingRules, Map<String, String> properties) {
-		super(agent, name, type, version, null, description, provider, properties);
+	SimpleArtifactRepository(IProvisioningAgent agent, String name, String type, String version, String description,
+			URI uri, String provider, Set<SimpleArtifactDescriptor> artifacts, String[][] mappingRules,
+			Map<String, String> properties) {
+		super(agent, name, type, version, uri, description, provider, properties);
 		this.artifactDescriptors.addAll(artifacts);
 		this.mappingRules = mappingRules;
 		for (SimpleArtifactDescriptor desc : artifactDescriptors)
-			mapDescriptor(desc);
+			mapDescriptor(desc, false);
 	}
 
-	private synchronized void mapDescriptor(IArtifactDescriptor descriptor) {
+	private synchronized void mapDescriptor(SimpleArtifactDescriptor descriptor, boolean added) {
+		if (added) {
+			addedDescriptors.add(descriptor);
+		}
 		IArtifactKey key = descriptor.getArtifactKey();
 		if (snapshotNeeded) {
 			cloneAritfactMap();
@@ -353,6 +352,7 @@ public class SimpleArtifactRepository extends AbstractArtifactRepository impleme
 	}
 
 	private synchronized void unmapDescriptor(IArtifactDescriptor descriptor) {
+		addedDescriptors.remove(descriptor);
 		IArtifactKey key = descriptor.getArtifactKey();
 		List<IArtifactDescriptor> descriptors = artifactMap.get(key);
 		if (descriptors == null)
@@ -389,19 +389,6 @@ public class SimpleArtifactRepository extends AbstractArtifactRepository impleme
 			}
 
 			initializeAfterLoad(location, false); // Don't update the timestamp, it will be done during save
-			if (properties != null) {
-				if (properties.containsKey(PUBLISH_PACK_FILES_AS_SIBLINGS)) {
-					synchronized (this) {
-						String newValue = properties.get(PUBLISH_PACK_FILES_AS_SIBLINGS);
-						if (Boolean.TRUE.toString().equals(newValue)) {
-							mappingRules = PACKED_MAPPING_RULES;
-						} else {
-							mappingRules = DEFAULT_MAPPING_RULES;
-						}
-						initializeMapper();
-					}
-				}
-			}
 			save();
 		} finally {
 			if (lockAcquired)
@@ -411,6 +398,7 @@ public class SimpleArtifactRepository extends AbstractArtifactRepository impleme
 
 	@Override
 	public synchronized void addDescriptor(IArtifactDescriptor toAdd, IProgressMonitor monitor) {
+		monitor = IProgressMonitor.nullSafe(monitor);
 		boolean lockAcquired = false;
 		try {
 			if (canLock()) {
@@ -424,7 +412,7 @@ public class SimpleArtifactRepository extends AbstractArtifactRepository impleme
 
 			SimpleArtifactDescriptor internalDescriptor = createInternalDescriptor(toAdd);
 			artifactDescriptors.add(internalDescriptor);
-			mapDescriptor(internalDescriptor);
+			mapDescriptor(internalDescriptor, true);
 			save();
 		} finally {
 			if (lockAcquired)
@@ -444,11 +432,6 @@ public class SimpleArtifactRepository extends AbstractArtifactRepository impleme
 		if (isFolderBased(descriptor))
 			internal.setRepositoryProperty(ARTIFACT_FOLDER, Boolean.TRUE.toString());
 
-		//clear out the UUID if we aren't using the blobstore.
-		if (flatButPackedEnabled(descriptor) && internal.getProperty(ARTIFACT_UUID) != null) {
-			internal.setProperty(ARTIFACT_UUID, null);
-		}
-
 		if (descriptor instanceof SimpleArtifactDescriptor) {
 			Map<String, String> repoProperties = ((SimpleArtifactDescriptor) descriptor).getRepositoryProperties();
 			for (Map.Entry<String, String> entry : repoProperties.entrySet()) {
@@ -460,6 +443,7 @@ public class SimpleArtifactRepository extends AbstractArtifactRepository impleme
 
 	@Override
 	public synchronized void addDescriptors(IArtifactDescriptor[] descriptors, IProgressMonitor monitor) {
+		monitor = IProgressMonitor.nullSafe(monitor);
 		boolean lockAcquired = false;
 		try {
 			if (canLock()) {
@@ -473,7 +457,7 @@ public class SimpleArtifactRepository extends AbstractArtifactRepository impleme
 					continue;
 				SimpleArtifactDescriptor internalDescriptor = createInternalDescriptor(descriptor);
 				artifactDescriptors.add(internalDescriptor);
-				mapDescriptor(internalDescriptor);
+				mapDescriptor(internalDescriptor, true);
 			}
 			save();
 		} finally {
@@ -483,12 +467,16 @@ public class SimpleArtifactRepository extends AbstractArtifactRepository impleme
 	}
 
 	private synchronized OutputStream addPostSteps(ProcessingStepHandler handler, IArtifactDescriptor descriptor, OutputStream destination, IProgressMonitor monitor) {
+		monitor = IProgressMonitor.nullSafe(monitor);
 		ArrayList<ProcessingStep> steps = new ArrayList<>();
 		steps.add(new SignatureVerifier());
 
 		Set<String> skipChecksums = ARTIFACT_MD5_CHECKSUM_ENABLED ? Collections.emptySet() : Collections.singleton(ChecksumHelper.MD5);
 		addChecksumVerifiers(descriptor, steps, skipChecksums, IArtifactDescriptor.ARTIFACT_CHECKSUM);
-		addPGPSignatureVerifier(descriptor, steps);
+
+		if (!isFolderBased(descriptor)) {
+			addPGPSignatureVerifier(descriptor, steps);
+		}
 
 		if (steps.isEmpty())
 			return destination;
@@ -507,6 +495,7 @@ public class SimpleArtifactRepository extends AbstractArtifactRepository impleme
 	}
 
 	private OutputStream addPreSteps(ProcessingStepHandler handler, IArtifactDescriptor descriptor, OutputStream destination, IProgressMonitor monitor) {
+		monitor = IProgressMonitor.nullSafe(monitor);
 		ArrayList<ProcessingStep> steps = new ArrayList<>();
 		if (IArtifactDescriptor.TYPE_ZIP.equals(descriptor.getProperty(IArtifactDescriptor.DOWNLOAD_CONTENTTYPE)))
 			steps.add(new ZipVerifierStep());
@@ -578,9 +567,6 @@ public class SimpleArtifactRepository extends AbstractArtifactRepository impleme
 	}
 
 	public synchronized URI createLocation(ArtifactDescriptor descriptor) {
-		if (flatButPackedEnabled(descriptor)) {
-			return getLocationForPackedButFlatArtifacts(descriptor);
-		}
 		// if the descriptor is canonical, clear out any UUID that might be set and use the Mapper
 		if (descriptor.getProcessingSteps().length == 0) {
 			descriptor.setProperty(ARTIFACT_UUID, null);
@@ -631,6 +617,7 @@ public class SimpleArtifactRepository extends AbstractArtifactRepository impleme
 	}
 
 	protected IStatus downloadArtifact(IArtifactDescriptor descriptor, OutputStream destination, IProgressMonitor monitor) {
+		SubMonitor subMon = SubMonitor.convert(monitor, 2);
 		if (isFolderBased(descriptor)) {
 			File artifactFolder = getArtifactFile(descriptor);
 			if (artifactFolder == null) {
@@ -668,8 +655,8 @@ public class SimpleArtifactRepository extends AbstractArtifactRepository impleme
 		URI baseLocation = getLocation(descriptor);
 		if (baseLocation == null)
 			return new Status(IStatus.ERROR, Activator.ID, NLS.bind(Messages.no_location, descriptor));
-		URI mirrorLocation = getMirror(baseLocation, monitor);
-		IStatus status = downloadArtifact(mirrorLocation, destination, monitor);
+		URI mirrorLocation = getMirror(baseLocation, subMon.split(1));
+		IStatus status = downloadArtifact(mirrorLocation, destination, subMon.split(1));
 		IStatus result = reportStatus(descriptor, destination, status);
 		// if the original download went reasonably but the reportStatus found some issues
 		// (e..g, in the processing steps/validators) then mark the mirror as bad and return
@@ -710,6 +697,7 @@ public class SimpleArtifactRepository extends AbstractArtifactRepository impleme
 	 * @return the number of bytes written.
 	 */
 	private IStatus copyFileToStream(File in, OutputStream out, IProgressMonitor monitor) {
+		monitor = IProgressMonitor.nullSafe(monitor);
 		// Buffer filled with contents from the stream at a time
 		int bufferSize = 16 * 1024;
 		byte[] buffer = new byte[bufferSize];
@@ -740,6 +728,7 @@ public class SimpleArtifactRepository extends AbstractArtifactRepository impleme
 	}
 
 	private IStatus downloadArtifact(URI mirrorLocation, OutputStream destination, IProgressMonitor monitor) {
+		monitor = IProgressMonitor.nullSafe(monitor);
 		//Bug 340352: transport has performance overhead of 100ms and more, bypass it for local copies
 		IStatus result = Status.OK_STATUS;
 		if (SimpleArtifactRepositoryFactory.PROTOCOL_FILE.equals(mirrorLocation.getScheme()))
@@ -767,6 +756,7 @@ public class SimpleArtifactRepository extends AbstractArtifactRepository impleme
 	 * @return the Location of the artifact in this repository, or an equivalent mirror
 	 */
 	private synchronized URI getMirror(URI baseLocation, IProgressMonitor monitor) {
+		monitor = IProgressMonitor.nullSafe(monitor);
 		if (!MIRRORS_ENABLED || (!isForceThreading() && isLocal()))
 			return baseLocation;
 		if (mirrors == null)
@@ -784,12 +774,14 @@ public class SimpleArtifactRepository extends AbstractArtifactRepository impleme
 	}
 
 	IStatus getArtifact(IArtifactRequest request, IProgressMonitor monitor) {
+		monitor = IProgressMonitor.nullSafe(monitor);
 		request.perform(this, monitor);
 		return request.getResult();
 	}
 
 	@Override
 	public IStatus getArtifact(IArtifactDescriptor descriptor, OutputStream destination, IProgressMonitor monitor) {
+		monitor = IProgressMonitor.nullSafe(monitor);
 		if (!holdsLock() && URIUtil.isFileURI(getLocation())) {
 			load(new NullProgressMonitor());
 		}
@@ -806,6 +798,7 @@ public class SimpleArtifactRepository extends AbstractArtifactRepository impleme
 
 	@Override
 	public IStatus getRawArtifact(IArtifactDescriptor descriptor, OutputStream destination, IProgressMonitor monitor) {
+		monitor = IProgressMonitor.nullSafe(monitor);
 		if (!holdsLock() && URIUtil.isFileURI(getLocation())) {
 			load(new NullProgressMonitor());
 		}
@@ -845,6 +838,7 @@ public class SimpleArtifactRepository extends AbstractArtifactRepository impleme
 
 	@Override
 	public IStatus getArtifacts(IArtifactRequest[] requests, IProgressMonitor monitor) {
+		monitor = IProgressMonitor.nullSafe(monitor);
 		if (!holdsLock() && URIUtil.isFileURI(getLocation())) {
 			load(new NullProgressMonitor());
 		}
@@ -920,35 +914,11 @@ public class SimpleArtifactRepository extends AbstractArtifactRepository impleme
 		return artifactDescriptors;
 	}
 
-	/**
-	 * Typically non-canonical forms of the artifact are stored in the blob store.
-	 * However, we support having the pack200 files alongside the canonical artifact
-	 * for compatibility with the format used in optimized update sites.  We call
-	 * this arrangement "flat but packed".
-	 */
-	@SuppressWarnings("removal")
-	private boolean flatButPackedEnabled(IArtifactDescriptor descriptor) {
-		return Boolean.TRUE.toString().equals(getProperties().get(PUBLISH_PACK_FILES_AS_SIBLINGS)) && IArtifactDescriptor.FORMAT_PACKED.equals(descriptor.getProperty(IArtifactDescriptor.FORMAT));
-	}
-
-	/**
-	 * @see #flatButPackedEnabled(IArtifactDescriptor)
-	 */
-	private URI getLocationForPackedButFlatArtifacts(IArtifactDescriptor descriptor) {
-		IArtifactKey key = descriptor.getArtifactKey();
-		return mapper.map(getLocation(), key.getClassifier(), key.getId(), key.getVersion().toString(),
-				descriptor.getProperty(IArtifactDescriptor.FORMAT), descriptor.getProperties());
-	}
-
 	public synchronized URI getLocation(IArtifactDescriptor descriptor) {
 		// if the artifact has a uuid then use it
 		String uuid = descriptor.getProperty(ARTIFACT_UUID);
 		if (uuid != null)
 			return blobStore.fileFor(bytesFromHexString(uuid));
-
-		if (flatButPackedEnabled(descriptor)) {
-			return getLocationForPackedButFlatArtifacts(descriptor);
-		}
 
 		try {
 			// if the artifact is just a reference then return the reference location
@@ -1156,6 +1126,7 @@ public class SimpleArtifactRepository extends AbstractArtifactRepository impleme
 	}
 
 	public OutputStream processDestination(ProcessingStepHandler handler, IArtifactDescriptor descriptor, OutputStream destination, IProgressMonitor monitor) {
+		monitor = IProgressMonitor.nullSafe(monitor);
 		destination = addPostSteps(handler, descriptor, destination, monitor);
 		destination = handler.createAndLink(getProvisioningAgent(), descriptor.getProcessingSteps(), descriptor, destination, monitor);
 		destination = addPreSteps(handler, descriptor, destination, monitor);
@@ -1164,6 +1135,7 @@ public class SimpleArtifactRepository extends AbstractArtifactRepository impleme
 
 	@Override
 	public synchronized void removeAll(IProgressMonitor monitor) {
+		monitor = IProgressMonitor.nullSafe(monitor);
 		boolean lockAcquired = false;
 		try {
 			if (canLock()) {
@@ -1186,6 +1158,7 @@ public class SimpleArtifactRepository extends AbstractArtifactRepository impleme
 
 	@Override
 	public synchronized void removeDescriptor(IArtifactDescriptor descriptor, IProgressMonitor monitor) {
+		monitor = IProgressMonitor.nullSafe(monitor);
 		boolean lockAcquired = false;
 		try {
 			if (canLock()) {
@@ -1204,6 +1177,7 @@ public class SimpleArtifactRepository extends AbstractArtifactRepository impleme
 
 	@Override
 	public synchronized void removeDescriptors(IArtifactDescriptor[] descriptors, IProgressMonitor monitor) {
+		monitor = IProgressMonitor.nullSafe(monitor);
 		boolean lockAcquired = false;
 		try {
 			if (canLock()) {
@@ -1225,6 +1199,11 @@ public class SimpleArtifactRepository extends AbstractArtifactRepository impleme
 
 	@Override
 	public synchronized void removeDescriptors(IArtifactKey[] keys, IProgressMonitor monitor) {
+		removeDescriptors(keys, false, monitor);
+	}
+
+	public synchronized void removeDescriptors(IArtifactKey[] keys, boolean removeIfAdded, IProgressMonitor monitor) {
+		monitor = IProgressMonitor.nullSafe(monitor);
 		boolean lockAcquired = false;
 		try {
 			if (canLock()) {
@@ -1237,7 +1216,9 @@ public class SimpleArtifactRepository extends AbstractArtifactRepository impleme
 			for (IArtifactKey key : keys) {
 				IArtifactDescriptor[] descriptors = getArtifactDescriptors(key);
 				for (IArtifactDescriptor descriptor : descriptors)
-					changed |= doRemoveArtifact(descriptor);
+					if (!removeIfAdded || addedDescriptors.remove(descriptor)) {
+						changed |= doRemoveArtifact(descriptor);
+					}
 			}
 			if (changed)
 				save();
@@ -1249,6 +1230,7 @@ public class SimpleArtifactRepository extends AbstractArtifactRepository impleme
 
 	@Override
 	public synchronized void removeDescriptor(IArtifactKey key, IProgressMonitor monitor) {
+		monitor = IProgressMonitor.nullSafe(monitor);
 		boolean lockAcquired = false;
 		try {
 			if (canLock()) {
@@ -1345,7 +1327,7 @@ public class SimpleArtifactRepository extends AbstractArtifactRepository impleme
 						jarFile.createNewFile();
 					}
 					os = new JarOutputStream(new FileOutputStream(jarFile));
-					((JarOutputStream) os).putNextEntry(new JarEntry(new Path(artifactsFile.getAbsolutePath()).lastSegment()));
+					((JarOutputStream) os).putNextEntry(new JarEntry(IPath.fromOSString(artifactsFile.getAbsolutePath()).lastSegment()));
 				}
 				super.setProperty(IRepository.PROP_TIMESTAMP, Long.toString(System.currentTimeMillis()), new NullProgressMonitor());
 				new SimpleArtifactRepositoryIO(getProvisioningAgent()).write(this, os);
@@ -1363,19 +1345,10 @@ public class SimpleArtifactRepository extends AbstractArtifactRepository impleme
 	}
 
 	private String doSetProperty(String key, String newValue, IProgressMonitor monitor, boolean save) {
+		monitor = IProgressMonitor.nullSafe(monitor);
 		String oldValue = super.setProperty(key, newValue, new NullProgressMonitor());
 		if (oldValue == newValue || (oldValue != null && oldValue.equals(newValue)))
 			return oldValue;
-		if (PUBLISH_PACK_FILES_AS_SIBLINGS.equals(key)) {
-			synchronized (this) {
-				if (Boolean.TRUE.toString().equals(newValue)) {
-					mappingRules = PACKED_MAPPING_RULES;
-				} else {
-					mappingRules = DEFAULT_MAPPING_RULES;
-				}
-				initializeMapper();
-			}
-		}
 		if (save)
 			save();
 		return oldValue;
@@ -1383,6 +1356,7 @@ public class SimpleArtifactRepository extends AbstractArtifactRepository impleme
 
 	@Override
 	public String setProperty(String key, String newValue, IProgressMonitor monitor) {
+		monitor = IProgressMonitor.nullSafe(monitor);
 		boolean lockAcquired = false;
 		try {
 			if (canLock()) {
@@ -1412,13 +1386,14 @@ public class SimpleArtifactRepository extends AbstractArtifactRepository impleme
 			synchronized (SimpleArtifactRepository.this) {
 				snapshotNeeded = true;
 				Collection<List<IArtifactDescriptor>> descs = SimpleArtifactRepository.this.artifactMap.values();
-				return query.perform(new CompoundIterator<IArtifactDescriptor>(descs.iterator()));
+				return query.perform(new CompoundIterator<>(descs.iterator()));
 			}
 		};
 	}
 
 	@Override
 	public IQueryResult<IArtifactKey> query(IQuery<IArtifactKey> query, IProgressMonitor monitor) {
+		monitor = IProgressMonitor.nullSafe(monitor);
 		return IndexProvider.query(this, query, monitor);
 	}
 
@@ -1433,6 +1408,7 @@ public class SimpleArtifactRepository extends AbstractArtifactRepository impleme
 
 	@Override
 	public IStatus executeBatch(IRunnableWithProgress runnable, IProgressMonitor monitor) {
+		monitor = IProgressMonitor.nullSafe(monitor);
 		IStatus result = null;
 
 		boolean lockAcquired = false;
@@ -1498,6 +1474,7 @@ public class SimpleArtifactRepository extends AbstractArtifactRepository impleme
 	 * @return Tue if the lock was acquired, false otherwise
 	 */
 	private synchronized boolean lockAndLoad(boolean ignoreLoad, IProgressMonitor monitor) {
+		monitor = IProgressMonitor.nullSafe(monitor);
 		if (holdsLock) {
 			throw new IllegalStateException("Locking is not reentrant"); //$NON-NLS-1$
 		}
@@ -1550,6 +1527,7 @@ public class SimpleArtifactRepository extends AbstractArtifactRepository impleme
 	 * load it, see {@link SimpleArtifactRepository#lockAndLoad(boolean, IProgressMonitor)}.
 	 */
 	private synchronized boolean lock(boolean wait, IProgressMonitor monitor) throws IOException {
+		monitor = IProgressMonitor.nullSafe(monitor);
 		if (!Activator.getInstance().enableArtifactLocking())
 			return true;
 
@@ -1607,6 +1585,7 @@ public class SimpleArtifactRepository extends AbstractArtifactRepository impleme
 	 * @param monitor
 	 */
 	private void load(IProgressMonitor monitor) {
+		monitor = IProgressMonitor.nullSafe(monitor);
 		if (!holdsLock())
 			doLoad(monitor);
 		else
@@ -1635,6 +1614,7 @@ public class SimpleArtifactRepository extends AbstractArtifactRepository impleme
 	 * @param monitor
 	 */
 	private void doLoad(IProgressMonitor monitor) {
+		monitor = IProgressMonitor.nullSafe(monitor);
 
 		SimpleArtifactRepositoryFactory repositoryFactory = new SimpleArtifactRepositoryFactory();
 		IArtifactRepository repositoryOnDisk = null;
@@ -1678,6 +1658,7 @@ public class SimpleArtifactRepository extends AbstractArtifactRepository impleme
 				//
 				this.artifactDescriptors = ((SimpleArtifactRepository) repositoryOnDisk).artifactDescriptors;
 				this.artifactMap = ((SimpleArtifactRepository) repositoryOnDisk).artifactMap;
+				this.addedDescriptors.clear();
 			}
 		} finally {
 			monitor.done();

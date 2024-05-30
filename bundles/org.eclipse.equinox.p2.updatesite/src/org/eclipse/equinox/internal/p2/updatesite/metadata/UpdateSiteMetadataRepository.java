@@ -1,5 +1,5 @@
 /*******************************************************************************
- *  Copyright (c) 2008, 2017 IBM Corporation and others.
+ *  Copyright (c) 2008, 2023 IBM Corporation and others.
  *
  *  This program and the accompanying materials
  *  are made available under the terms of the Eclipse Public License 2.0
@@ -53,6 +53,11 @@ public class UpdateSiteMetadataRepository implements IMetadataRepository {
 
 	@Override
 	public void addReferences(Collection<? extends IRepositoryReference> references) {
+		throw new UnsupportedOperationException("Repository not modifiable: " + location); //$NON-NLS-1$
+	}
+
+	@Override
+	public boolean removeReferences(Collection<? extends IRepositoryReference> references) {
 		throw new UnsupportedOperationException("Repository not modifiable: " + location); //$NON-NLS-1$
 	}
 
@@ -156,6 +161,11 @@ public class UpdateSiteMetadataRepository implements IMetadataRepository {
 	@Override
 	public IQueryResult<IInstallableUnit> query(IQuery<IInstallableUnit> query, IProgressMonitor monitor) {
 		return delegate.query(query, monitor);
+	}
+
+	@Override
+	public boolean contains(IInstallableUnit element) {
+		return delegate.contains(element);
 	}
 
 	@Override

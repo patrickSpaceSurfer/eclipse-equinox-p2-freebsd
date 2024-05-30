@@ -25,6 +25,7 @@ import org.eclipse.equinox.internal.p2.director.PermissiveSlicer;
 import org.eclipse.equinox.internal.p2.director.Slicer;
 import org.eclipse.equinox.internal.p2.repository.Transport;
 import org.eclipse.equinox.internal.p2.repository.helpers.RepositoryHelper;
+import org.eclipse.equinox.p2.core.IProvisioningAgent;
 import org.eclipse.equinox.p2.core.ProvisionException;
 import org.eclipse.equinox.p2.engine.*;
 import org.eclipse.equinox.p2.internal.repository.comparator.ArtifactChecksumComparator;
@@ -39,7 +40,7 @@ import org.eclipse.equinox.p2.repository.metadata.IMetadataRepository;
 import org.eclipse.osgi.util.NLS;
 
 public class MirrorApplication extends AbstractApplication implements IApplication, IExecutableExtension {
-	private static final String MD5_COMPARATOR = ArtifactChecksumComparator.COMPARATOR_ID + ".md5"; //$NON-NLS-1$
+	private static final String DEFAULT_COMPARATOR = ArtifactChecksumComparator.COMPARATOR_ID + ".sha-256"; //$NON-NLS-1$
 	private static final String LOG_ROOT = "p2.mirror"; //$NON-NLS-1$
 	private static final String MIRROR_MODE = "metadataOrArtifacts"; //$NON-NLS-1$
 
@@ -56,13 +57,20 @@ public class MirrorApplication extends AbstractApplication implements IApplicati
 	private boolean mirrorReferences = true;
 	private String metadataOrArtifacts = null;
 	private String[] rootIUs = null;
-	private boolean includePacked = true;
 	private boolean mirrorProperties = false;
 
 	private File mirrorLogFile; // file to log mirror output to (optional)
 	private File comparatorLogFile; // file to comparator output to (optional)
 	private IArtifactMirrorLog mirrorLog;
 	private IArtifactMirrorLog comparatorLog;
+
+	public MirrorApplication() {
+		super();
+	}
+
+	public MirrorApplication(IProvisioningAgent agent) {
+		super(agent);
+	}
 
 	/**
 	 * Convert a list of tokens into an array. The list separator has to be
@@ -93,9 +101,7 @@ public class MirrorApplication extends AbstractApplication implements IApplicati
 	}
 
 	@Override
-	public void stop() {
-		// TODO Auto-generated method stub
-
+	public void stop() { // nothing to do
 	}
 
 	/*
@@ -111,7 +117,7 @@ public class MirrorApplication extends AbstractApplication implements IApplicati
 		}
 	}
 
-	public void initializeFromArguments(String[] args) throws Exception {
+	public void initializeFromArguments(String[] args) {
 		if (args == null)
 			return;
 
@@ -241,12 +247,11 @@ public class MirrorApplication extends AbstractApplication implements IApplicati
 
 		Mirroring mirror = new Mirroring(getCompositeArtifactRepository(), destinationArtifactRepository, raw);
 		mirror.setCompare(compare);
-		mirror.setComparatorId(comparatorID == null ? MD5_COMPARATOR : comparatorID);
+		mirror.setComparatorId(comparatorID == null ? DEFAULT_COMPARATOR : comparatorID);
 		mirror.setBaseline(initializeBaseline());
 		mirror.setValidate(validate);
 		mirror.setCompareExclusions(compareExclusions);
 		mirror.setTransport((Transport) agent.getService(Transport.SERVICE_NAME));
-		mirror.setIncludePacked(includePacked);
 		mirror.setMirrorProperties(mirrorProperties);
 
 		// If IUs have been specified then only they should be mirrored, otherwise
@@ -263,7 +268,8 @@ public class MirrorApplication extends AbstractApplication implements IApplicati
 		if (baseline == null)
 			return null;
 		try {
-			return addRepository(getArtifactRepositoryManager(), baseline, 0, null);
+			return (IArtifactRepository) addRepository(getArtifactRepositoryManager(), baseline, 0,
+					artifactReposToRemove, null);
 		} catch (ProvisionException e) {
 			if (mirrorLog != null && e.getStatus() != null)
 				mirrorLog.log(e.getStatus());
@@ -315,7 +321,7 @@ public class MirrorApplication extends AbstractApplication implements IApplicati
 			while (queryResult.hasNext())
 				sourceIUs.add(queryResult.next());
 			/* old metadata mirroring app did not throw an exception here */
-			if (sourceIUs.size() == 0 && destinationMetadataRepository != null && metadataOrArtifacts == null)
+			if (sourceIUs.isEmpty() && destinationMetadataRepository != null && metadataOrArtifacts == null)
 				throw new ProvisionException(Messages.MirrorApplication_no_IUs);
 		}
 	}
@@ -355,18 +361,19 @@ public class MirrorApplication extends AbstractApplication implements IApplicati
 		String profileId = "MirrorApplication-" + System.currentTimeMillis(); //$NON-NLS-1$
 		IProfile profile = registry.addProfile(profileId, slicingOptions.getFilter());
 		IPlanner planner = Activator.getAgent().getService(IPlanner.class);
-		if (planner == null)
+		if (planner == null) {
 			throw new IllegalStateException();
+		}
 		IProfileChangeRequest pcr = planner.createChangeRequest(profile);
 		pcr.addAll(sourceIUs);
 		IProvisioningPlan plan = planner.getProvisioningPlan(pcr, null, monitor);
 		registry.removeProfile(profileId);
-		@SuppressWarnings("unchecked")
-		IQueryable<IInstallableUnit>[] arr = new IQueryable[plan.getInstallerPlan() == null ? 1 : 2];
-		arr[0] = plan.getAdditions();
-		if (plan.getInstallerPlan() != null)
-			arr[1] = plan.getInstallerPlan().getAdditions();
-		return new CompoundQueryable<>(arr);
+		List<IQueryable<IInstallableUnit>> queriables = new ArrayList<>();
+		queriables.add(plan.getAdditions());
+		if (plan.getInstallerPlan() != null) {
+			queriables.add(plan.getInstallerPlan().getAdditions());
+		}
+		return new CompoundQueryable<>(queriables);
 	}
 
 	private IQueryable<IInstallableUnit> slice(IProgressMonitor monitor) throws ProvisionException {
@@ -376,8 +383,7 @@ public class MirrorApplication extends AbstractApplication implements IApplicati
 			return performResolution(monitor);
 
 		Slicer slicer = createSlicer(slicingOptions);
-		IQueryable<IInstallableUnit> slice = slicer.slice(sourceIUs.toArray(new IInstallableUnit[sourceIUs.size()]),
-				monitor);
+		IQueryable<IInstallableUnit> slice = slicer.slice(sourceIUs, monitor);
 
 		if (slice != null && slicingOptions.latestVersionOnly()) {
 			IQueryResult<IInstallableUnit> queryResult = slice.query(QueryUtil.createLatestIUQuery(), monitor);
@@ -393,10 +399,9 @@ public class MirrorApplication extends AbstractApplication implements IApplicati
 	}
 
 	protected Slicer createSlicer(SlicingOptions options) {
-		PermissiveSlicer slicer = new PermissiveSlicer(getCompositeMetadataRepository(), options.getFilter(),
+		return new PermissiveSlicer(getCompositeMetadataRepository(), options.getFilter(),
 				options.includeOptionalDependencies(), options.isEverythingGreedy(), options.forceFilterTo(),
 				options.considerStrictDependencyOnly(), options.followOnlyFilteredRequirements());
-		return slicer;
 	}
 
 	public void setSlicingOptions(SlicingOptions options) {
@@ -486,10 +491,6 @@ public class MirrorApplication extends AbstractApplication implements IApplicati
 
 	public void setComparatorExclusions(IQuery<IArtifactDescriptor> exclusions) {
 		compareExclusions = exclusions;
-	}
-
-	public void setIncludePacked(boolean includePacked) {
-		this.includePacked = includePacked;
 	}
 
 	public void setMirrorProperties(boolean mirrorProperties) {

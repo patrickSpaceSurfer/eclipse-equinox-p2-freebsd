@@ -14,15 +14,16 @@
  *******************************************************************************/
 package org.eclipse.equinox.p2.query;
 
-import java.lang.reflect.Array;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.HashSet;
 import java.util.Iterator;
 import java.util.Set;
+import java.util.stream.Stream;
 import org.eclipse.core.runtime.IProgressMonitor;
 import org.eclipse.core.runtime.NullProgressMonitor;
 import org.eclipse.equinox.internal.p2.metadata.Messages;
+import org.eclipse.equinox.internal.p2.metadata.expression.QueryResult;
 
 /**
  * A collector is a generic visitor that collects objects passed to it, and can
@@ -49,13 +50,6 @@ public class Collector<T> implements IQueryResult<T> {
 	@SuppressWarnings("unchecked")
 	public static final <T> Collector<T> emptyCollector() {
 		return (Collector<T>) EMPTY_COLLECTOR;
-	}
-
-	/**
-	 * Creates a new collector.
-	 */
-	public Collector() {
-		super();
 	}
 
 	/**
@@ -96,8 +90,9 @@ public class Collector<T> implements IQueryResult<T> {
 	 * @return the collection being used to collect results.
 	 */
 	protected Collection<T> getCollection() {
-		if (collected == null)
+		if (collected == null) {
 			collected = new HashSet<>();
+		}
 		return collected;
 	}
 
@@ -119,7 +114,7 @@ public class Collector<T> implements IQueryResult<T> {
 	 */
 	@Override
 	public Iterator<T> iterator() {
-		return collected == null ? Collections.<T>emptyList().iterator() : collected.iterator();
+		return collected == null ? Collections.emptyIterator() : collected.iterator();
 	}
 
 	/**
@@ -140,18 +135,13 @@ public class Collector<T> implements IQueryResult<T> {
 	 */
 	@Override
 	public T[] toArray(Class<T> clazz) {
-		int size = collected == null ? 0 : collected.size();
-		@SuppressWarnings("unchecked")
-		T[] result = (T[]) Array.newInstance(clazz, size);
-		if (size != 0)
-			collected.toArray(result);
-		return result;
+		return QueryResult.toArray(collected, clazz);
 	}
 
 	/**
 	 * Returns a copy of the collected objects.
 	 * 
-	 * @return An unmodifiable collection of the collected objects
+	 * @return An modifiable collection of the collected objects
 	 */
 	@Override
 	public Set<T> toSet() {
@@ -164,8 +154,9 @@ public class Collector<T> implements IQueryResult<T> {
 	@Override
 	public IQueryResult<T> query(IQuery<T> query, IProgressMonitor monitor) {
 		IQueryResult<T> result;
-		if (monitor == null)
+		if (monitor == null) {
 			monitor = new NullProgressMonitor();
+		}
 		try {
 			monitor.beginTask(Messages.performing_subquery, 1);
 			result = query.perform(iterator());
@@ -187,5 +178,10 @@ public class Collector<T> implements IQueryResult<T> {
 			return Collections.emptySet();
 		}
 		return Collections.unmodifiableSet(collected);
+	}
+
+	@Override
+	public Stream<T> stream() {
+		return collected == null ? Stream.empty() : collected.stream();
 	}
 }

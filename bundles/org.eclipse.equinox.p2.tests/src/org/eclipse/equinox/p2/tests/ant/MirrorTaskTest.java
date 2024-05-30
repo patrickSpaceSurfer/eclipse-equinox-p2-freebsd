@@ -24,6 +24,7 @@ import java.net.URISyntaxException;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Properties;
 import java.util.zip.ZipEntry;
@@ -55,8 +56,8 @@ import org.eclipse.equinox.spi.p2.publisher.PublisherHelper;
 import org.eclipse.osgi.util.NLS;
 
 public class MirrorTaskTest extends AbstractAntProvisioningTest {
+	private static final String DOWNLOAD_CHECKSUM = IArtifactDescriptor.DOWNLOAD_CHECKSUM + ".sha-256";
 	private static final String MIRROR_TASK = "p2.mirror";
-	private static final String MIRROR_ARTIFACTS_TASK = "p2.artifact.mirror";
 	private URI destinationRepo;
 	private URI artifactRepo, sliceArtifactRepo, sliceRepo, sourceRepo2, zipRepo;
 
@@ -65,7 +66,7 @@ public class MirrorTaskTest extends AbstractAntProvisioningTest {
 		super.setUp();
 		// Get a random location to create a repository
 		destinationRepo = (new File(getTestFolder(getName()), "destinationRepo")).toURI();
-		artifactRepo = getTestData("error loading data", "testData/mirror/mirrorPackedRepo").toURI();
+		artifactRepo = getTestData("error loading data", "testData/mirror/mirrorRepo").toURI();
 		sourceRepo2 = getTestData("error loading data", "testData/mirror/mirrorSourceRepo2").toURI();
 		sliceRepo = getTestData("error loading data", "testData/permissiveSlicer").toURI();
 		sliceArtifactRepo = getTestData("error loading data", "testData/testRepos/updateSite").toURI();
@@ -125,7 +126,8 @@ public class MirrorTaskTest extends AbstractAntProvisioningTest {
 		mirror.addAttribute("log", logFile);
 		addTask(mirror);
 		runAntTask();
-		assertLogContainsLine(new File(folder, "log.txt"), "No repository found at " + URIUtil.toUnencodedString(URIUtil.fromString(baseline)));
+		assertLogContainsLines(new File(folder, "log.txt"),
+				"No repository found at " + URIUtil.toUnencodedString(URIUtil.fromString(baseline)));
 	}
 
 	/*
@@ -278,7 +280,9 @@ public class MirrorTaskTest extends AbstractAntProvisioningTest {
 
 		while (exception.getCause() != null && !(exception instanceof ProvisionException))
 			exception = exception.getCause();
-		assertTrue("Unexpected error", NLS.bind(org.eclipse.equinox.p2.internal.repository.tools.Messages.exception_invalidDestination, location).equals(exception.getMessage()));
+		assertEquals("Unexpected error", NLS
+				.bind(org.eclipse.equinox.p2.internal.repository.tools.Messages.exception_invalidDestination, location),
+				exception.getMessage());
 	}
 
 	/*
@@ -302,7 +306,7 @@ public class MirrorTaskTest extends AbstractAntProvisioningTest {
 
 			while (exception.getCause() != null && !(exception instanceof ProvisionException))
 				exception = exception.getCause();
-			assertTrue("Unexpected error", NLS.bind("No repository found at {0}.", location).equals(exception.getMessage()));
+			assertEquals("Unexpected error", NLS.bind("No repository found at {0}.", location), exception.getMessage());
 		} finally {
 			delete(new File(location));
 		}
@@ -356,7 +360,7 @@ public class MirrorTaskTest extends AbstractAntProvisioningTest {
 		Map<String, String> p = getSliceProperties();
 		p.put("org.eclipse.update.install.features", String.valueOf(true));
 		PermissiveSlicer slicer = new PermissiveSlicer(repo, p, true, true, true, true, false);
-		IQueryable<IInstallableUnit> result = slicer.slice(new IInstallableUnit[] {iu}, new NullProgressMonitor());
+		IQueryable<IInstallableUnit> result = slicer.slice(List.of(iu), new NullProgressMonitor());
 		assertEquals("Different number of IUs", queryResultSize(result.query(QueryUtil.createIUAnyQuery(), new NullProgressMonitor())), getIUCount(destinationRepo));
 
 		try {
@@ -384,7 +388,7 @@ public class MirrorTaskTest extends AbstractAntProvisioningTest {
 		runAntTask();
 
 		PermissiveSlicer slicer = new PermissiveSlicer(repo, Collections.emptyMap(), true, false, true, false, false);
-		IQueryable<IInstallableUnit> result = slicer.slice(new IInstallableUnit[] {iu}, new NullProgressMonitor());
+		IQueryable<IInstallableUnit> result = slicer.slice(List.of(iu), new NullProgressMonitor());
 
 		assertEquals("Different number of IUs", queryResultSize(result.query(QueryUtil.createIUAnyQuery(), new NullProgressMonitor())), getIUCount(destinationRepo));
 		try {
@@ -414,7 +418,7 @@ public class MirrorTaskTest extends AbstractAntProvisioningTest {
 		Map<String, String> p = getSliceProperties();
 		p.put("org.eclipse.update.install.features", String.valueOf(true));
 		PermissiveSlicer slicer = new PermissiveSlicer(repo, p, false, true, true, false, false);
-		IQueryable<IInstallableUnit> result = slicer.slice(new IInstallableUnit[] {iu}, new NullProgressMonitor());
+		IQueryable<IInstallableUnit> result = slicer.slice(List.of(iu), new NullProgressMonitor());
 		assertEquals("Different number of IUs", queryResultSize(result.query(QueryUtil.createIUAnyQuery(), new NullProgressMonitor())), getIUCount(destinationRepo));
 		try {
 			assertIUContentEquals("IUs differ", result, getMetadataRepositoryManager().loadRepository(destinationRepo, null));
@@ -442,7 +446,7 @@ public class MirrorTaskTest extends AbstractAntProvisioningTest {
 
 		Map<String, String> p = getSliceProperties();
 		PermissiveSlicer slicer = new PermissiveSlicer(repo, p, true, true, true, false, false);
-		IQueryable<IInstallableUnit> result = slicer.slice(new IInstallableUnit[] {iu}, new NullProgressMonitor());
+		IQueryable<IInstallableUnit> result = slicer.slice(List.of(iu), new NullProgressMonitor());
 		assertEquals("Different number of IUs", queryResultSize(result.query(QueryUtil.createIUAnyQuery(), new NullProgressMonitor())), getIUCount(destinationRepo));
 		try {
 			assertIUContentEquals("IUs differ", result, getMetadataRepositoryManager().loadRepository(destinationRepo, null));
@@ -474,7 +478,7 @@ public class MirrorTaskTest extends AbstractAntProvisioningTest {
 		Map<String, String> p = getSliceProperties();
 		p.put("org.eclipse.update.install.features", String.valueOf(true));
 		PermissiveSlicer slicer = new PermissiveSlicer(repo, p, true, true, true, false, false);
-		IQueryable<IInstallableUnit> result = slicer.slice(new IInstallableUnit[] {iu}, new NullProgressMonitor());
+		IQueryable<IInstallableUnit> result = slicer.slice(List.of(iu), new NullProgressMonitor());
 		assertEquals("Different number of IUs", queryResultSize(result.query(QueryUtil.createIUAnyQuery(), new NullProgressMonitor())), getIUCount(destinationRepo));
 		try {
 			assertIUContentEquals("IUs differ", result, getMetadataRepositoryManager().loadRepository(destinationRepo, null));
@@ -506,7 +510,7 @@ public class MirrorTaskTest extends AbstractAntProvisioningTest {
 
 		Map<String, String> p = getSliceProperties();
 		PermissiveSlicer slicer = new PermissiveSlicer(repo, p, true, true, true, false, false);
-		IQueryable<IInstallableUnit> result = slicer.slice(new IInstallableUnit[] {iu}, new NullProgressMonitor());
+		IQueryable<IInstallableUnit> result = slicer.slice(List.of(iu), new NullProgressMonitor());
 		assertEquals("Different number of IUs", queryResultSize(result.query(QueryUtil.createIUAnyQuery(), new NullProgressMonitor())), getIUCount(destinationRepo));
 		try {
 			assertIUContentEquals("IUs differ", result, getMetadataRepositoryManager().loadRepository(destinationRepo, null));
@@ -538,7 +542,7 @@ public class MirrorTaskTest extends AbstractAntProvisioningTest {
 
 		Map<String, String> p = getSliceProperties();
 		PermissiveSlicer slicer = new PermissiveSlicer(repo, p, true, true, true, false, false);
-		IQueryable<IInstallableUnit> result = slicer.slice(new IInstallableUnit[] {iu}, new NullProgressMonitor());
+		IQueryable<IInstallableUnit> result = slicer.slice(List.of(iu), new NullProgressMonitor());
 
 		assertEquals("Different number of IUs", queryResultSize(result.query(QueryUtil.createIUAnyQuery(), new NullProgressMonitor())), getIUCount(destinationRepo));
 		assertEquals("Different number of ArtifactKeys", getArtifactKeyCount(result.query(QueryUtil.createIUAnyQuery(), new NullProgressMonitor())), getArtifactKeyCount(destinationRepo));
@@ -574,7 +578,7 @@ public class MirrorTaskTest extends AbstractAntProvisioningTest {
 
 		Map<String, String> p = getSliceProperties();
 		PermissiveSlicer slicer = new PermissiveSlicer(repo, p, true, true, true, false, false);
-		IQueryable<IInstallableUnit> result = slicer.slice(new IInstallableUnit[] {iu}, new NullProgressMonitor());
+		IQueryable<IInstallableUnit> result = slicer.slice(List.of(iu), new NullProgressMonitor());
 
 		assertEquals("Different number of ArtifactKeys", getArtifactKeyCount(result.query(QueryUtil.createIUAnyQuery(), new NullProgressMonitor())), getArtifactKeyCount(destinationRepo));
 		assertArtifactKeyContentEquals("Different ArtifactKeys", result.query(QueryUtil.createIUAnyQuery(), new NullProgressMonitor()), destinationRepo);
@@ -607,7 +611,7 @@ public class MirrorTaskTest extends AbstractAntProvisioningTest {
 
 		Map<String, String> p = getSliceProperties();
 		PermissiveSlicer slicer = new PermissiveSlicer(repo, p, true, true, true, false, false);
-		IQueryable<IInstallableUnit> result = slicer.slice(new IInstallableUnit[] {iu, iu2}, new NullProgressMonitor());
+		IQueryable<IInstallableUnit> result = slicer.slice(List.of(iu, iu2), new NullProgressMonitor());
 
 		assertEquals("Different number of ArtifactKeys", getArtifactKeyCount(result.query(QueryUtil.createIUAnyQuery(), new NullProgressMonitor())), getArtifactKeyCount(destinationRepo));
 		assertArtifactKeyContentEquals("Different ArtifactKeys", result.query(QueryUtil.createIUAnyQuery(), new NullProgressMonitor()), destinationRepo);
@@ -705,24 +709,11 @@ public class MirrorTaskTest extends AbstractAntProvisioningTest {
 		}
 	}
 
-	public void testMirrorPackedRepo() {
-		AntTaskElement mirror = new AntTaskElement(MIRROR_ARTIFACTS_TASK);
-		mirror.addAttribute("destination", URIUtil.toUnencodedString(destinationRepo));
-		mirror.addAttribute("source", URIUtil.toUnencodedString(artifactRepo));
-		addTask(mirror);
-		runAntTask();
-
-		File repo = new File(destinationRepo);
-
-		assertTrue(new File(repo, "plugins/org.eclipse.core.filebuffers_3.4.0.v20080603-2000.jar.pack.gz").exists());
-		assertTrue(new File(repo, "plugins/org.eclipse.osgi.services.source_3.1.200.v20071203.jar.pack.gz").exists());
-	}
-
 	/*
 	 * Modified from org.eclipse.equinox.p2.tests.mirror.ArtifactMirrorApplicationTest
 	 */
-	public void testBaselineCompareUsingMD5Comparator() {
-		//Setup create descriptors with different md5 values
+	public void testBaselineCompareUsingComparator() {
+		// Setup create descriptors with different checksum values
 		IArtifactKey dupKey = PublisherHelper.createBinaryArtifactKey("testKeyId", Version.create("1.2.3"));
 		File artifact1 = getTestData("0.0", "/testData/mirror/mirrorSourceRepo1 with space/content.xml");
 		File artifact2 = getTestData("0.0", "/testData/mirror/mirrorSourceRepo2/content.xml");
@@ -739,7 +730,8 @@ public class MirrorTaskTest extends AbstractAntProvisioningTest {
 		IArtifactDescriptor descriptor2 = PublisherHelper.createArtifactDescriptor(dupKey, baselineContentLocation);
 
 		assertEquals("Ensuring Descriptors are the same", descriptor1, descriptor2);
-		assertNotEquals("Ensuring MD5 values are different", descriptor1.getProperty(IArtifactDescriptor.DOWNLOAD_MD5), descriptor2.getProperty(IArtifactDescriptor.DOWNLOAD_MD5));
+		assertNotEquals("Ensuring download checksums are different", descriptor1.getProperty(DOWNLOAD_CHECKSUM),
+				descriptor2.getProperty(DOWNLOAD_CHECKSUM));
 
 		//Setup make repositories
 		IArtifactRepository repo = null;
@@ -777,7 +769,7 @@ public class MirrorTaskTest extends AbstractAntProvisioningTest {
 
 			// Create a comparator element
 			AntTaskElement comparator = new AntTaskElement("comparator");
-			comparator.addAttribute("comparator", ArtifactChecksumComparator.COMPARATOR_ID + ".md5");
+			comparator.addAttribute("comparator", ArtifactChecksumComparator.COMPARATOR_ID + ".sha-256");
 			comparator.addElement(getRepositoryElement(baselineLocation.toURI(), null));
 			mirror.addElement(comparator);
 
@@ -800,8 +792,11 @@ public class MirrorTaskTest extends AbstractAntProvisioningTest {
 
 		IArtifactDescriptor[] destDescriptors = destination.getArtifactDescriptors(descriptor2.getArtifactKey());
 		assertEquals("Ensuring destination has correct number of descriptors", 1, destDescriptors.length);
-		assertEquals("Ensuring destination contains the descriptor from the baseline", descriptor2.getProperty(IArtifactDescriptor.DOWNLOAD_MD5), destDescriptors[0].getProperty(IArtifactDescriptor.DOWNLOAD_MD5));
-		String msg = NLS.bind(Messages.warning_differentMD5, new Object[] {URIUtil.toUnencodedString(baseline.getLocation()), URIUtil.toUnencodedString(repo.getLocation()), descriptor1});
+		assertEquals("Ensuring destination contains the descriptor from the baseline",
+				descriptor2.getProperty(DOWNLOAD_CHECKSUM), destDescriptors[0].getProperty(DOWNLOAD_CHECKSUM));
+		String msg = NLS.bind(Messages.warning_different_checksum,
+				new Object[] { URIUtil.toUnencodedString(baseline.getLocation()),
+						URIUtil.toUnencodedString(repo.getLocation()), "SHA-256", descriptor1 });
 
 		assertLogContains(msg);
 	}

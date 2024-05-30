@@ -14,11 +14,11 @@
 package org.eclipse.equinox.p2.tests.ql;
 
 import java.net.URI;
-import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.Iterator;
 import java.util.Map;
+import java.util.Set;
 import org.eclipse.core.runtime.NullProgressMonitor;
 import org.eclipse.equinox.internal.p2.director.PermissiveSlicer;
 import org.eclipse.equinox.internal.p2.director.QueryableArray;
@@ -367,7 +367,7 @@ public class PerformanceTest extends AbstractProvisioningTest {
 
 			startTime = System.currentTimeMillis();
 			Slicer slicer = new Slicer(new QueryableArray(gatherAvailableInstallableUnits(repo)), env, false);
-			slice = slicer.slice(roots, new NullProgressMonitor());
+			slice = slicer.slice(r.toUnmodifiableSet(), new NullProgressMonitor());
 			sliceTime += (System.currentTimeMillis() - startTime);
 		}
 		// Check the size of the last slice to verify that it's the same as the traverse size
@@ -413,7 +413,7 @@ public class PerformanceTest extends AbstractProvisioningTest {
 
 			startTime = System.currentTimeMillis();
 			Slicer slicer = new PermissiveSlicer(repo, env, true, true, true, false, false);
-			slice = slicer.slice(roots, new NullProgressMonitor());
+			slice = slicer.slice(r.toUnmodifiableSet(), new NullProgressMonitor());
 			sliceTime += (System.currentTimeMillis() - startTime);
 		}
 		// Check the size of the last slice to verify that it's the same as the traverse size
@@ -441,11 +441,7 @@ public class PerformanceTest extends AbstractProvisioningTest {
 		return metadataManager.loadRepository(metadataRepo, new NullProgressMonitor());
 	}
 
-	private IInstallableUnit[] gatherAvailableInstallableUnits(IQueryable<IInstallableUnit> queryable) {
-		ArrayList<IInstallableUnit> list = new ArrayList<>();
-		IQueryResult<IInstallableUnit> matches = queryable.query(QueryUtil.createIUAnyQuery(), null);
-		for (IInstallableUnit iInstallableUnit : matches)
-			list.add(iInstallableUnit);
-		return list.toArray(new IInstallableUnit[list.size()]);
+	private Set<IInstallableUnit> gatherAvailableInstallableUnits(IQueryable<IInstallableUnit> queryable) {
+		return queryable.query(QueryUtil.createIUAnyQuery(), null).toUnmodifiableSet();
 	}
 }

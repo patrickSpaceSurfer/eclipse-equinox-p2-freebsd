@@ -1,5 +1,5 @@
 /*******************************************************************************
- * Copyright (c) 2008, 2017 IBM Corporation and others.
+ * Copyright (c) 2008, 2023 IBM Corporation and others.
  *
  * This program and the accompanying materials
  * are made available under the terms of the Eclipse Public License 2.0
@@ -16,7 +16,6 @@ package org.eclipse.equinox.internal.p2.metadata.repository;
 
 import java.io.*;
 import java.net.URI;
-import java.net.URISyntaxException;
 import java.util.*;
 import java.util.jar.JarEntry;
 import java.util.jar.JarOutputStream;
@@ -24,6 +23,7 @@ import org.eclipse.core.runtime.*;
 import org.eclipse.equinox.internal.p2.core.helpers.LogHelper;
 import org.eclipse.equinox.internal.p2.persistence.CompositeRepositoryIO;
 import org.eclipse.equinox.internal.p2.persistence.CompositeRepositoryState;
+import org.eclipse.equinox.internal.p2.repository.helpers.RepositoryHelper;
 import org.eclipse.equinox.p2.core.*;
 import org.eclipse.equinox.p2.metadata.IInstallableUnit;
 import org.eclipse.equinox.p2.metadata.index.IIndex;
@@ -63,28 +63,8 @@ public class CompositeMetadataRepository extends AbstractMetadataRepository impl
 	 * @return the repository or null if unable to create one
 	 */
 	public static CompositeMetadataRepository createMemoryComposite(IProvisioningAgent agent) {
-		if (agent == null)
-			return null;
-		IMetadataRepositoryManager repoManager = agent.getService(IMetadataRepositoryManager.class);
-		if (repoManager == null)
-			return null;
-		try {
-			//create a unique opaque URI
-			long time = System.currentTimeMillis();
-			URI repositoryURI = new URI("memory:" + String.valueOf(time)); //$NON-NLS-1$
-			while (repoManager.contains(repositoryURI))
-				repositoryURI = new URI("memory:" + String.valueOf(++time)); //$NON-NLS-1$
-
-			CompositeMetadataRepository result = (CompositeMetadataRepository) repoManager.createRepository(repositoryURI, repositoryURI.toString(), IMetadataRepositoryManager.TYPE_COMPOSITE_REPOSITORY, null);
-			repoManager.removeRepository(repositoryURI);
-			return result;
-		} catch (ProvisionException e) {
-			// just return null
-			LogHelper.log(e);
-		} catch (URISyntaxException e) {
-			// just return null
-		}
-		return null;
+		return (CompositeMetadataRepository) RepositoryHelper.createMemoryComposite(agent,
+				IMetadataRepositoryManager.class, IMetadataRepositoryManager.TYPE_COMPOSITE_REPOSITORY);
 	}
 
 	private IMetadataRepositoryManager getManager() {
@@ -151,6 +131,16 @@ public class CompositeMetadataRepository extends AbstractMetadataRepository impl
 			if (monitor != null)
 				monitor.done();
 		}
+	}
+
+	@Override
+	public boolean contains(IInstallableUnit element) {
+		for (IMetadataRepository repository : loadedRepos) {
+			if (repository.contains(element)) {
+				return true;
+			}
+		}
+		return false;
 	}
 
 	//successfully loaded repo will be added to the list repositoriesToBeRemovedOnFailure if the list is not null and the repo wasn't previously loaded
@@ -256,11 +246,7 @@ public class CompositeMetadataRepository extends AbstractMetadataRepository impl
 			//			return new File(spec + extension);
 			return spec;
 		}
-		if (path.endsWith("/")) //$NON-NLS-1$
-			path += CompositeMetadataRepositoryFactory.CONTENT_FILENAME;
-		else
-			path += "/" + CompositeMetadataRepositoryFactory.CONTENT_FILENAME; //$NON-NLS-1$
-		return new File(path + extension);
+		return new File(path, CompositeMetadataRepositoryFactory.CONTENT_FILENAME + extension);
 	}
 
 	public static File getActualLocation(URI location) {
@@ -273,10 +259,16 @@ public class CompositeMetadataRepository extends AbstractMetadataRepository impl
 	}
 
 	@Override
+	public synchronized boolean removeReferences(Collection<? extends IRepositoryReference> references) {
+		throw new UnsupportedOperationException("Cannot remove References to a composite repository"); //$NON-NLS-1$
+	}
+
+	@Override
 	public Collection<IRepositoryReference> getReferences() {
-		HashSet<IRepositoryReference> allRefs = new HashSet<>();
-		for (IMetadataRepository child : loadedRepos)
+		Set<IRepositoryReference> allRefs = new HashSet<>();
+		for (IMetadataRepository child : loadedRepos) {
 			allRefs.addAll(child.getReferences());
+		}
 		return allRefs;
 	}
 

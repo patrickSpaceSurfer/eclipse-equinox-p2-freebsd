@@ -10,22 +10,31 @@
  ******************************************************************************/
 package org.eclipse.equinox.p2.tests.repository;
 
+import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
+import static org.junit.Assert.fail;
 
 import java.io.File;
+import java.io.FileNotFoundException;
 import java.io.IOException;
+import java.io.InputStream;
+import java.io.OutputStream;
 import java.net.URI;
-import org.eclipse.core.runtime.IPath;
+import org.eclipse.core.runtime.CoreException;
+import org.eclipse.core.runtime.IProgressMonitor;
+import org.eclipse.core.runtime.IStatus;
 import org.eclipse.core.runtime.NullProgressMonitor;
-import org.eclipse.core.runtime.Path;
 import org.eclipse.core.runtime.Platform;
+import org.eclipse.equinox.internal.p2.repository.AuthenticationFailedException;
 import org.eclipse.equinox.internal.p2.repository.CacheManager;
+import org.eclipse.equinox.internal.p2.repository.Messages;
 import org.eclipse.equinox.internal.p2.repository.Transport;
 import org.eclipse.equinox.p2.core.IAgentLocation;
 import org.eclipse.equinox.p2.core.IProvisioningAgent;
 import org.eclipse.equinox.p2.core.IProvisioningAgentProvider;
 import org.eclipse.equinox.p2.core.ProvisionException;
+import org.eclipse.osgi.util.NLS;
 import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
@@ -53,8 +62,7 @@ public class CacheManagerTest {
 
 	@After
 	public void tearDown() throws Exception {
-		Path repositoryLocationPath = new Path(repositoryLocation.getPath());
-		deleteFileOrDirectory(repositoryLocationPath.toFile());
+		deleteFileOrDirectory(new File(repositoryLocation));
 	}
 
 	@Test
@@ -100,14 +108,49 @@ public class CacheManagerTest {
 				lastModifiedInitial == cache2.lastModified());
 	}
 
+	/**
+	 * https://github.com/eclipse-equinox/p2/issues/257
+	 */
+	@Test
+	public void testStatusCodeMustBeRepositoryNotFoundInCaseOfFileNotFound() throws IOException, ProvisionException {
+		CacheManager cacheManagerWithStubTransport = new CacheManager(new AgentLocationMock(), new Transport() {
+
+			@Override
+			public InputStream stream(URI toDownload, IProgressMonitor monitor)
+					throws FileNotFoundException, CoreException, AuthenticationFailedException {
+				throw new UnsupportedOperationException();
+			}
+
+			@Override
+			public long getLastModified(URI toDownload, IProgressMonitor monitor)
+					throws CoreException, FileNotFoundException, AuthenticationFailedException {
+				throw new FileNotFoundException();
+			}
+
+			@Override
+			public IStatus download(URI toDownload, OutputStream target, IProgressMonitor monitor) {
+				throw new UnsupportedOperationException();
+			}
+		});
+
+		URI uriNonExistent = URI.create("https://foo.bar/nonexistent/content.xml.xz");
+		try {
+			cacheManagerWithStubTransport.createCacheFromFile(uriNonExistent, new NullProgressMonitor());
+			fail(FileNotFoundException.class.getName() + " expected");
+		} catch (FileNotFoundException e) {
+			assertEquals(NLS.bind(Messages.CacheManager_Repository_not_found, uriNonExistent.toString()),
+					e.getMessage());
+		}
+	}
+
 	private URI createRepistory() throws IOException {
 		File repository = File.createTempFile("remoteFile", ""); //$NON-NLS-1$//$NON-NLS-2$
 		repository.deleteOnExit();
 		assertTrue(repository.delete());
 		assertTrue(repository.mkdirs());
-		IPath contentXmlPath = new Path(repository.getAbsolutePath()).append("content.xml"); //$NON-NLS-1$
-		assertTrue(contentXmlPath.toFile().createNewFile());
-		contentXmlFile = contentXmlPath.toFile();
+		File contentXmlPath = new File(repository, "content.xml"); //$NON-NLS-1$
+		assertTrue(contentXmlPath.createNewFile());
+		contentXmlFile = contentXmlPath;
 		return repository.toURI();
 	}
 

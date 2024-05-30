@@ -13,16 +13,19 @@
  *******************************************************************************/
 package org.eclipse.equinox.p2.query;
 
-import java.lang.reflect.Array;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.HashSet;
 import java.util.Iterator;
 import java.util.Set;
+import java.util.stream.Stream;
 import org.eclipse.core.runtime.IProgressMonitor;
+import org.eclipse.equinox.internal.p2.metadata.expression.QueryResult;
 
 /**
- * This class allows to adapt java collections to a p2 a query result  and as such something queryable  
+ * This class allows to adapt java collections to a p2 a query result and as
+ * such something queryable
+ * 
  * @since 2.0
  */
 public class CollectionResult<T> implements IQueryResult<T> {
@@ -49,12 +52,7 @@ public class CollectionResult<T> implements IQueryResult<T> {
 
 	@Override
 	public T[] toArray(Class<T> clazz) {
-		int size = collection.size();
-		@SuppressWarnings("unchecked")
-		T[] result = (T[]) Array.newInstance(clazz, size);
-		if (size != 0)
-			collection.toArray(result);
-		return result;
+		return QueryResult.toArray(collection, clazz);
 	}
 
 	@Override
@@ -70,5 +68,10 @@ public class CollectionResult<T> implements IQueryResult<T> {
 	@Override
 	public String toString() {
 		return collection.toString();
+	}
+
+	@Override
+	public Stream<T> stream() {
+		return collection.stream();
 	}
 }

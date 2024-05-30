@@ -1,5 +1,5 @@
 /*******************************************************************************
- *  Copyright (c) 2007, 2017 IBM Corporation and others.
+ *  Copyright (c) 2007, 2023 IBM Corporation and others.
  *
  *  This program and the accompanying materials
  *  are made available under the terms of the Eclipse Public License 2.0
@@ -15,12 +15,19 @@ package org.eclipse.equinox.p2.tests;
 
 import java.net.URI;
 import java.net.URISyntaxException;
-import java.util.*;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collection;
+import java.util.HashSet;
+import java.util.Iterator;
+import java.util.List;
 import org.eclipse.core.runtime.IProgressMonitor;
 import org.eclipse.equinox.p2.core.IProvisioningAgent;
 import org.eclipse.equinox.p2.metadata.IInstallableUnit;
 import org.eclipse.equinox.p2.metadata.Version;
-import org.eclipse.equinox.p2.query.*;
+import org.eclipse.equinox.p2.query.IQuery;
+import org.eclipse.equinox.p2.query.IQueryResult;
+import org.eclipse.equinox.p2.query.QueryUtil;
 import org.eclipse.equinox.p2.repository.IRepository;
 import org.eclipse.equinox.p2.repository.IRepositoryReference;
 import org.eclipse.equinox.p2.repository.metadata.IMetadataRepository;
@@ -80,6 +87,11 @@ public class TestMetadataRepository extends AbstractMetadataRepository {
 	}
 
 	@Override
+	public boolean contains(IInstallableUnit element) {
+		return units.contains(element);
+	}
+
+	@Override
 	public void removeAll() {
 		units.clear();
 	}
@@ -109,6 +121,12 @@ public class TestMetadataRepository extends AbstractMetadataRepository {
 	public synchronized void addReferences(Collection<? extends IRepositoryReference> references) {
 		assertModifiable();
 		repositories.addAll(references);
+	}
+
+	@Override
+	public synchronized boolean removeReferences(Collection<? extends IRepositoryReference> references) {
+		assertModifiable();
+		return repositories.removeAll(references);
 	}
 
 	/**

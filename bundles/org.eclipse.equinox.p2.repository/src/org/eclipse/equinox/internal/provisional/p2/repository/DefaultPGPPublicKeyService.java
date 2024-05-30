@@ -385,13 +385,16 @@ public class DefaultPGPPublicKeyService extends PGPPublicKeyService {
 							return signature.getCreationTime();
 						}
 					} catch (PGPException e) {
-						//$FALL-THROUGH$
+						// https://bugs.eclipse.org/bugs/show_bug.cgi?id=581453
+						// When something goes wrong, assume that it's revoked.
+						return new Date(0);
 					}
 					break;
 				}
 				}
 			}
 		}
+
 		return null;
 	}
 
@@ -742,12 +745,7 @@ public class DefaultPGPPublicKeyService extends PGPPublicKeyService {
 
 		public GPGPubringSupplier(Path pubring) {
 			this.pubring = pubring;
-			try {
-				keyRingCollection = new PGPPublicKeyRingCollection(Collections.emptyList());
-			} catch (IOException | PGPException e) {
-				// Cannot happen for an empty collection.
-				throw new RuntimeException(e);
-			}
+			keyRingCollection = new PGPPublicKeyRingCollection(Collections.emptyList());
 		}
 
 		@Override
@@ -811,7 +809,7 @@ public class DefaultPGPPublicKeyService extends PGPPublicKeyService {
 			PGPPublicKeyRingCollection empty;
 			try {
 				empty = new PGPPublicKeyRingCollection(Collections.emptyList());
-			} catch (IOException | PGPException e) {
+			} catch (Exception e) {
 				// Cannot happen for an empty collection.
 				throw new RuntimeException(e);
 			}
