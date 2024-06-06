@@ -22,7 +22,7 @@
    <plugins>
       <plugin id="org.eclipse.equinox.p2.installer"/>
       <plugin id="org.eclipse.swt.cocoa.macosx.x86_64" fragment="true"/>
-      <plugin id="org.eclipse.swt.gtk.freebsd.amd4" fragment="true"/>
+      <plugin id="org.eclipse.swt.gtk.freebsd.amd64" fragment="true"/>
       <plugin id="org.eclipse.swt.win32.win32.x86_64" fragment="true"/>
    </plugins>
 
