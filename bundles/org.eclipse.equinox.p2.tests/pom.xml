@@ -31,8 +31,12 @@
 				<groupId>org.eclipse.tycho</groupId>
 				<artifactId>target-platform-configuration</artifactId>
 				<configuration>
-					<environments combine.self="override">
-						<!-- clear to enforce using the default environment only -->
+					<environments>
+            					<environment>
+              						<os>freebsd</os>
+              						<ws>gtk</ws>
+             						<arch>amd64</arch>
+            					</environment>
 					</environments>
 				</configuration>
 			</plugin>
